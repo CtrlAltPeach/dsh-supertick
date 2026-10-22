@@ -9,5 +9,11 @@ lets a thin lead sleep until the team needs it.
   tests, stay in this directory and call `python3 -m unittest discover -s scripts/tests`.
 - Example engine config: `agent-teams.example.json`.
 
-Install, quick start, engines and config compatibility: see the
+## Install
+
+```
+/plugin install supertick --marketplace denizen24/supertick
+```
+
+For full instructions, quick start, engines and config compatibility: see the
 [repository README](../../README.md) ([по-русски](../../README.ru.md)).

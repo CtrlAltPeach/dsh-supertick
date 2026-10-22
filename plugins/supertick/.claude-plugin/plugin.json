@@ -1,5 +1,6 @@
 {
   "name": "supertick",
+  "displayName": "Supertick",
   "version": "1.0.0",
   "description": "Agent team for Claude Code built around supertick, an out-of-model event loop that wakes a thin lead only when the team needs it.",
   "author": {

@@ -1,18 +1,18 @@
 {
   "name": "supertick",
+  "description": "Marketplace for supertick, an agent team plugin for Claude Code.",
   "owner": {
     "name": "denizen24",
     "url": "https://github.com/denizen24"
-  },
-  "metadata": {
-    "description": "Marketplace for supertick, an agent team plugin for Claude Code."
   },
   "plugins": [
     {
       "name": "supertick",
       "source": "./plugins/supertick",
       "description": "Agent team for Claude Code driven by an out-of-model event loop: a thin lead sleeps until the tick wakes it.",
-      "version": "1.0.0"
+      "version": "1.0.0",
+      "category": "development",
+      "tags": ["agent-team", "multi-agent", "event-loop", "code-review"]
     }
   ]
 }

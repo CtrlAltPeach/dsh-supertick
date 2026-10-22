@@ -56,7 +56,7 @@ MEDIUM и COMPLEX.
 | Агенты | `coder`, `unified-reviewer`, `tech-lead`, `architect`, `proxy-teammate`, `codebase-researcher`, `reference-researcher`, `risk-tester`, `spec-verifier`, `ci-verifier`, `browser-verifier` |
 | Скрипты | `supervisor-tick.py`, `supervisor-wait.sh`, `run-state.py`, `team-mail.sh`, `team-wait.sh`, `run-engine.sh`, `engine-sessions.py` |
 
-Нужно: Claude Code (сборки 2.1.27x–2.1.280, по датированным заметкам
+Нужно: Claude Code (сборки 2.1.27x–2.1.308, по датированным заметкам
 `plugins/supertick/skills/team-feature/references/team-runtime.md`), `bash`, `python3`
 (только стандартная библиотека), `git`. Статус `busy` у тика читает `/proc`, то есть работает на
 Linux; без `/proc` это правило просто не действует. Тексты ролей и навыков написаны по-русски,
@@ -113,9 +113,17 @@ Linux; без `/proc` это правило просто не действует
 
 ## Установка
 
+Из терминала:
+
 ```bash
 claude plugin marketplace add denizen24/supertick
 claude plugin install supertick@supertick
+```
+
+Или изнутри запущенной сессии Claude Code (v2.1.275+):
+
+```
+/plugin install supertick --marketplace denizen24/supertick
 ```
 
 После установки перезапустите сессию Claude Code: навыки и агенты подхватываются при старте.
