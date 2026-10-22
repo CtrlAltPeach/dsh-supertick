@@ -10,6 +10,7 @@
       "name": "supertick",
       "source": "./plugins/supertick",
       "description": "Agent team for Claude Code driven by an out-of-model event loop: a thin lead sleeps until the tick wakes it.",
+      "version": "1.0.0",
       "category": "development",
       "tags": ["agent-team", "multi-agent", "event-loop", "code-review"]
     }
