@@ -188,8 +188,24 @@ Coders commit, each one only its own paths. The lead neither edits nor commits c
 
 ## Engines
 
-If the config file is absent, the whole team is Claude and resolving engines is free. Handing a
-role over to an outside CLI takes one entry in `~/.claude/agent-teams.json`:
+The plugin works fully with Claude Code alone; the engine config is an optional enhancement.
+
+**Without `~/.claude/agent-teams.json`:** all roles run on Claude, no extra calls are made, and
+nothing about engines is printed. Researchers, risk testers, spec verifier and legacy scanner are
+done by Claude subagents; there are no proxy teammates. The one exception is `second-reviewer`
+(second opinion on SENSITIVE tasks: auth/permissions, money/balance, DB migrations, shared infra):
+it is skipped rather than falling back to Claude, because asking the same model twice won't
+surface anything new. Each task gets one reviewer. The same applies when the config exists but the
+binary it names (e.g. `cursor-agent`) isn't installed: silent fallback to Claude, second opinion
+skipped.
+
+**Recommendation if you add a config:** the most valuable addition is a different-vendor model for
+`second-reviewer`, for example `cursor` with `gpt-5.6-sol-high` in read-only ask mode. After that,
+offload bulk one-shot roles (researchers, risk testers, spec verifier, legacy scanner) to a
+cheaper model to save Claude request limits. Keep `lead`, `unified-reviewer`, `tech-lead` and
+`coder` on Claude.
+
+Handing a role over to an outside CLI takes one entry in `~/.claude/agent-teams.json`:
 
 ```json
 {
