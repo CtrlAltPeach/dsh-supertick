@@ -1,0 +1,204 @@
+{
+  "corpus": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams",
+  "corpus_sha": "ffc350e5abb5c5bb299ac93ce218a49992ed4480",
+  "excluded": [
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/scripts/supervisor-tick.py",
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/scripts/supervisor-wait.sh",
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/scripts/team-mail.sh",
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/scripts/team-wait.sh",
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/scripts/run-state.py",
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/scripts/run-engine.sh",
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/scripts/engine-sessions.py",
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/scripts/tests/test_supervisor_tick.py",
+    "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/skills/team-feature/references/supervisor.md"
+  ],
+  "targets": [
+    "plugins/supertick/.claude-plugin/plugin.json",
+    "plugins/supertick/README.md",
+    "plugins/supertick/agent-teams.example.json",
+    "plugins/supertick/agents/architect.md",
+    "plugins/supertick/agents/browser-verifier.md",
+    "plugins/supertick/agents/ci-verifier.md",
+    "plugins/supertick/agents/codebase-researcher.md",
+    "plugins/supertick/agents/coder.md",
+    "plugins/supertick/agents/proxy-teammate.md",
+    "plugins/supertick/agents/reference-researcher.md",
+    "plugins/supertick/agents/risk-tester.md",
+    "plugins/supertick/agents/spec-verifier.md",
+    "plugins/supertick/agents/tech-lead.md",
+    "plugins/supertick/agents/unified-reviewer.md",
+    "plugins/supertick/scripts/engine-sessions.py",
+    "plugins/supertick/scripts/run-engine.sh",
+    "plugins/supertick/scripts/run-state.py",
+    "plugins/supertick/scripts/supervisor-tick.py",
+    "plugins/supertick/scripts/supervisor-wait.sh",
+    "plugins/supertick/scripts/team-mail.sh",
+    "plugins/supertick/scripts/team-wait.sh",
+    "plugins/supertick/scripts/tests/test_supervisor_tick.py",
+    "plugins/supertick/skills/conventions/SKILL.md",
+    "plugins/supertick/skills/conventions/references/examples.md",
+    "plugins/supertick/skills/interviewed-team-feature/SKILL.md",
+    "plugins/supertick/skills/interviewed-team-feature/references/interview-principles.md",
+    "plugins/supertick/skills/team-feature/SKILL.md",
+    "plugins/supertick/skills/team-feature/references/engines.md",
+    "plugins/supertick/skills/team-feature/references/phase1-planning.md",
+    "plugins/supertick/skills/team-feature/references/phase2-monitoring.md",
+    "plugins/supertick/skills/team-feature/references/phase3-verification.md",
+    "plugins/supertick/skills/team-feature/references/supervisor.md",
+    "plugins/supertick/skills/team-feature/references/team-runtime.md",
+    "tools/build_whitelist.py",
+    "tools/overlap-whitelist.txt",
+    "tools/overlap_check.py",
+    "tools/run_overlap.sh",
+    "tools/tests/test_overlap_check.py",
+    "tools/tests/test_run_overlap.py",
+    "tools/tests/test_scripts.py",
+    "tools/tests/test_tick_parsers.py",
+    "tools/tests/test_tick_proxy_unread.py",
+    "tools/tests/test_token_check.py",
+    "tools/token_check.py",
+    "README.md",
+    "README.ru.md",
+    "docs/measurements.md"
+  ],
+  "corpus_files": 24,
+  "params": {
+    "n": 8,
+    "min_line": 40,
+    "anchors_k": 5,
+    "anchors_strict": false,
+    "whitelist": "tools/overlap-whitelist.txt"
+  },
+  "counts": {
+    "ngrams": 0,
+    "lines": 0,
+    "headings": 0,
+    "anchors": 10
+  },
+  "whitelisted_ngrams": 524,
+  "ngrams": [],
+  "lines": [],
+  "headings": [],
+  "anchors": [
+    {
+      "file": "plugins/supertick/scripts/supervisor-tick.py",
+      "line": 56,
+      "anchors": [
+        "12",
+        "06",
+        "03",
+        "00",
+        "13"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/agents/unified-reviewer.md"
+    },
+    {
+      "file": "plugins/supertick/scripts/supervisor-tick.py",
+      "line": 56,
+      "anchors": [
+        "06",
+        "03",
+        "00",
+        "13",
+        "48"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/agents/unified-reviewer.md"
+    },
+    {
+      "file": "plugins/supertick/scripts/supervisor-tick.py",
+      "line": 56,
+      "anchors": [
+        "03",
+        "00",
+        "13",
+        "48",
+        "02"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/agents/unified-reviewer.md"
+    },
+    {
+      "file": "plugins/supertick/scripts/tests/test_supervisor_tick.py",
+      "line": 394,
+      "anchors": [
+        "06",
+        "03",
+        "00",
+        "13",
+        "48"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/agents/unified-reviewer.md"
+    },
+    {
+      "file": "plugins/supertick/scripts/tests/test_supervisor_tick.py",
+      "line": 394,
+      "anchors": [
+        "03",
+        "00",
+        "13",
+        "48",
+        "02"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/agents/unified-reviewer.md"
+    },
+    {
+      "file": "plugins/supertick/skills/team-feature/references/engines.md",
+      "line": 493,
+      "anchors": [
+        "~/.codex/sessions/yyyy/mm/dd/rollout",
+        "~/.kimi-code/sessions",
+        "session_index.jsonl",
+        "~/.grok/sessions",
+        "~/.cursor/chats"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/skills/team-feature/references/engines.md"
+    },
+    {
+      "file": "plugins/supertick/skills/team-feature/references/engines.md",
+      "line": 494,
+      "anchors": [
+        "~/.kimi-code/sessions",
+        "session_index.jsonl",
+        "~/.grok/sessions",
+        "~/.cursor/chats",
+        "meta.json"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/skills/team-feature/references/engines.md"
+    },
+    {
+      "file": "plugins/supertick/skills/team-feature/references/engines.md",
+      "line": 494,
+      "anchors": [
+        "session_index.jsonl",
+        "~/.grok/sessions",
+        "~/.cursor/chats",
+        "meta.json",
+        "~/.cursor/projects"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/skills/team-feature/references/engines.md"
+    },
+    {
+      "file": "plugins/supertick/skills/team-feature/references/supervisor.md",
+      "line": 68,
+      "anchors": [
+        "06",
+        "03",
+        "00",
+        "13",
+        "48"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/agents/unified-reviewer.md"
+    },
+    {
+      "file": "plugins/supertick/skills/team-feature/references/supervisor.md",
+      "line": 68,
+      "anchors": [
+        "03",
+        "00",
+        "13",
+        "48",
+        "02"
+      ],
+      "corpus_file": "/root/.claude/plugins/marketplaces/ilia-izmailov-plugins/plugins/agent-teams/agents/unified-reviewer.md"
+    }
+  ]
+}

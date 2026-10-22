@@ -1,0 +1,4 @@
+.claude/teams/
+__pycache__/
+.pytest_cache/
+*.pyc

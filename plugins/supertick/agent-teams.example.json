@@ -1,0 +1,57 @@
+{
+  "_note": "Пример ~/.claude/agent-teams.json: какая роль на каком внешнем движке. Всё, что не названо, работает на Claude. Ключи на «_» игнорируются.",
+  "enabled": true,
+  "fallback": "claude",
+  "roles": {
+    "risk-tester": {
+      "engine": "cursor",
+      "model": "composer-2.5"
+    },
+    "codebase-researcher": {
+      "engine": "cursor",
+      "model": "composer-2.5"
+    },
+    "reference-researcher": {
+      "engine": "cursor",
+      "model": "composer-2.5"
+    },
+    "spec-verifier": {
+      "engine": "cursor",
+      "model": "composer-2.5"
+    },
+    "research-challenger": {
+      "engine": "cursor",
+      "model": "grok-4.7-xhigh"
+    },
+    "research-critic": {
+      "engine": "cursor",
+      "model": "grok-4.7-xhigh"
+    },
+    "rollback-critic": {
+      "engine": "cursor",
+      "model": "grok-4.7-xhigh"
+    },
+    "second-reviewer": {
+      "engine": "cursor",
+      "model": "gpt-5.6-sol-high"
+    },
+    "legacy-scanner": {
+      "engine": "cursor",
+      "model": "composer-2.5"
+    }
+  },
+  "engines": {
+    "cursor": {
+      "_note": "Cursor Agent CLI (вход: cursor-agent login). «--» перед промптом обязателен, --trust нужен в неинтерактивном режиме.",
+      "cmd": "cursor-agent -p --trust --output-format json --model {model} {mode_flags} -- \"$(cat {prompt_file})\"",
+      "resume": "cursor-agent -p --trust --output-format json --model {model} {mode_flags} --resume {session} -- \"$(cat {prompt_file})\"",
+      "model": "grok-4.7-xhigh-fast",
+      "mode_flags": {
+        "read": "--mode ask",
+        "write": "--sandbox enabled -f"
+      },
+      "session": "\"session_id\"\\s*:\\s*\"([0-9a-f-]{36})\"",
+      "result": "result"
+    }
+  }
+}

@@ -1,0 +1,556 @@
+# Белый список сверки чистой комнаты (tools/overlap_check.py --whitelist).
+# Строка — элемент интерфейса: токен протокола, имя файла, ключ, команда пресета.
+# Сгенерированная часть: все вставки `кода` и блоки кода реестра протокола supertick
+# (spec/protocol.md прогона 121-398), реестр ролей и команды пресетов движков (spec/engines.md §2, §5, §7),
+# строки frontmatter агентов (model, color, tools из spec/roles.md). Решётки в начале заголовков сняты.
+# Гасится только n-грамма, все слова которой есть в этом списке.
+# Сгенерировано строк: 521.
+
+task #<id>
+task: <id>
+SendMessage(to="main")
+Resuming agent
+queued …
+QUEUED: <имя>
+mail/lead/
+READY
+IN_REVIEW: task #<id>. Files: <список>
+IN_REVIEW
+REVIEW: task #<id>. Files: <список>
+Commits:
+Handover:
+unified-reviewer
+REVIEW
+mail/unified-reviewer/
+undelivered_mail
+VERDICT: task #<id> — APPROVED
+VERDICT: task #<id> — CHANGES REQUESTED
+CRITICAL <n> · MAJOR <n> · MINOR <n>
+Report: <путь>
+VERDICT
+mail/<кодер>/
+team-wait.sh --kind VERDICT
+DONE: task #<id>
+SUMMARY:
+REVIEW:
+EDGE CASES:
+DONE
+accept_needed
+QUESTION: task #<id>. <вопрос>
+QUESTION
+answer_needed
+STUCK: task #<id>. <проблема>
+STUCK
+stuck
+STUCK: cannot reach <имя>
+ESCALATION: task #<id>. <что не подходит, почему, предложение>
+ESCALATION
+REVIEW_LOOP: task #<id>. <повторяющийся спор>
+REVIEW_LOOP
+LEGACY_FOUND: task #<id>. <N> записей в LEGACY_REPORT.md
+queued
+QUEUED
+RESEND: from <отправитель>
+ALREADY ANSWERED: <первая строка>
+ANSWER
+team-wait.sh --kind ANSWER
+DECISION: <что решено и почему, одна фраза>
+SENSITIVE: task #<id> — <почему>. Files: <список>.
+SECOND REVIEWER AVAILABLE:
+SENSITIVE
+PARKED: task #<id> — waiting for SECOND REVIEWER
+PARKED: task #<id> — waiting for SECOND OPINION
+SECOND REVIEWER: <engine>
+SECOND REVIEWER: none
+SECOND OPINION: task #<id>
+Findings: <путь>
+second-reviewer-<id>
+file:line
+ENGINE RUNNING: <роль> on <engine>, started <HH:MM>
+process: <pid>
+output: <путь .out>
+done marker: <путь .out.done>
+ENGINE_DOWN: <роль>. <причина одной строкой>
+ENGINE_DOWN
+ROUND <N> from <persona>: AGREE
+ROUND <N> from <persona>: CONTEST
+File: <путь раунда>
+SPEC APPROVED from <persona>.
+FINAL POSITION from <persona>: <позиция>
+PLAN OK
+NOT A REVIEWER: REVIEW — к unified-reviewer
+UNANSWERED: coder-<N> task #<id>
+ACCEPT: task #<id> — PASS
+ACCEPT: task #<id> — FAIL
+reports/accept-task<id>.md
+accept_result
+ESCALATE TO <имя>: <сообщение>
+ВОПРОС ОРКЕСТРАТОРУ: <вопрос>
+— через <engine>: подтверждено <N>, не подтверждено <M>, отброшено <K>
+VALIDATE PLAN: <путь PLAN.md>
+tech-lead
+DEBATE PLAN: <путь PLAN.md>
+ROUND 1 from …
+ROUND <N>. <пути трёх файлов раунда N−1>
+ROUND <N> from …
+FINAL: SPEC APPROVED or FINAL POSITION
+SPEC APPROVED from …
+FINAL POSITION from …
+PRIMARY ARCHITECT
+DEBATE COMPLETE — HAND OVER AND STAND DOWN.
+reports/review-brief-<имя>.md
+DONE: review brief <путь>
+IDENTIFY RISKS
+RISK ANALYSIS RESULTS:
+CROSS-TASK CHECK: git diff <base>..HEAD
+STATUS?
+PARKED:
+ROTATION
+reports/standing-unified-reviewer-<n>.md
+UNANSWERED: …
+ROSTER UPDATE: <роль> заменён — если ещё ждёшь ответа, пошли запрос заново <роль>
+mail/<кодер>/…_lead_ANSWER_task<id>.md
+ALREADY ANSWERED
+ACCEPTANCE of task #<id>
+supertick:spec-verifier
+ACCEPT: …
+{"type": "shutdown_request"}
+TaskStop
+lead
+PLUGIN: <абсолютный корень плагина из state.md>
+RUN DIR: <абсолютный путь .claude/teams/feature-<имя>>
+NAME: <имя участника>
+PLUGIN:
+--- TASK ---
+--- END TASK ---
+--- GOLD ---
+--- END GOLD ---
+--- SUPERVISOR ---
+--- END SUPERVISOR ---
+--- ROLE BRIEF ---
+--- END ROLE BRIEF ---
+--- ARCHITECT BRIEFS ---
+--- END ARCHITECT BRIEFS ---
+--- STANDING NOTES ---
+--- END STANDING NOTES ---
+--- FOREIGN CHANGES ---
+--- END FOREIGN CHANGES ---
+--- SECOND OPINION CONTRACT ---
+--- END SECOND OPINION CONTRACT ---
+supertick:coder
+TEAM: feature-<имя>
+FEATURE GOAL: <1–2 фразы>
+DEFINITION OF DONE: …
+YOUR TEAM ROSTER:
+REVIEWER: unified-reviewer
+ESCALATIONS: tech-lead
+ESCALATIONS: main
+LEAD: main — DONE, STUCK, QUESTION, копии queued
+DECISIONS: <путь>
+PLAN: <путь>
+HANDOVER: <пути handover-task<блокеры>.md>
+CARD: python3 {plugin}/scripts/run-state.py set <RUN DIR> <NAME> status=<running|in_review|fixing|done|stuck> [note=...]
+MAIL TO LEAD: {plugin}/scripts/team-mail.sh <RUN DIR> lead <NAME> <KIND> task <id> -- "<тот же текст>"
+REVIEW COPY: {plugin}/scripts/team-mail.sh <RUN DIR> unified-reviewer <NAME> REVIEW task <id> -- "<текст REVIEW>"
+VERDICT WAIT: {plugin}/scripts/team-wait.sh <RUN DIR> <NAME> --kind VERDICT --task <id>
+ANSWER WAIT: {plugin}/scripts/team-wait.sh <RUN DIR> <NAME> --kind ANSWER --task <id>
+supertick:unified-reviewer
+TEAM:
+FEATURE:
+DEFINITION OF DONE:
+GOLD REFERENCES: <пути>
+CONFIRMED RISKS:
+SECOND REVIEWER AVAILABLE: <engine>
+Engines
+second-reviewer
+CARD FILE: <RUN DIR>/runs/unified-reviewer.json   (Write целиком: reviewing при получении REVIEW, idle после вердикта)
+MAILBOX: <RUN DIR>/mail/unified-reviewer/   (копии REVIEW; ts для своих файлов брать отсюда + 1 с)
+VERDICT FILE: <RUN DIR>/mail/<кодер>/<YYYYMMDDTHHMMSS>_unified-reviewer_VERDICT_task<id>.md
+SENSITIVE COPY: <RUN DIR>/mail/lead/<YYYYMMDDTHHMMSS>_unified-reviewer_SENSITIVE_task<id>.md
+supertick:tech-lead
+CODEBASE CONTEXT:
+supertick:architect
+PERSONA: FRONTEND | BACKEND | SYSTEMS
+EXPERTISE: <список>
+DEBATE PLAN
+supertick:proxy-teammate
+ROLE: <id роли>
+ENGINE: <имя движка>; cmd: <разрешённый шаблон>; resume: <шаблон>; session: <как извлекается>
+LAUNCHER: <абсолютный путь {plugin}/scripts/run-engine.sh>
+SANDBOX: read-only   (coder: workspace-write + явный список разрешённых файлов)
+claude
+TASK: #<id>
+FILES: <список>
+DIFF RANGE: git diff <base> -- <файлы>
+DIFF FILE: <RUN DIR>/engine/second-reviewer-<id>-1.diff
+ROLE BRIEF
+ROLE: second-reviewer
+NAME:
+FEATURE: <описание>
+FEATURE: …
+PROJECT CONTEXT:
+RISK:
+SEVERITY:
+AFFECTED TASKS:
+WHAT TO VERIFY:
+RELEVANT CODE:
+Build & Types
+Tests
+Browser Checks
+Visual Checks
+Spec Checks
+general-purpose
+Explore
+ACCEPTANCE of task #<id>, team feature-<имя>.
+DIFF FILE: <RUN DIR>/engine/accept-task<id>.diff (commits <sha…>, не пересобирать)
+APPROVED DEVIATIONS: <записи DECISIONS.md про задачу или none>
+DEVIATION JOURNAL: <RUN DIR>/reports/deviations-*-task<id>.md (если есть)
+OUT OF SCOPE: <nonGoals>
+team-mail.sh
+run-state.py
+run-engine.sh
+Task <id>:
+plan_tasks
+Task 3 —
+tasks
+Status: <одно слово без пробелов и точки>
+IN_PROGRESS(coder-2)
+status:
+Status: DONE.
+Files to create/edit: a, b
+edit:
+create:
+touched_since
+first_minute_silent
+silent_too_long
+Phase: <слово>
+from:
+kind:
+task:
+ts:
+read_mail
+Kind:
+Kind: STUCK
+to:
+LEGACY_FOUND
+.upper()
+^kind:[[:space:]]*<KIND>[[:space:]]*$
+kind: DONE 3
+task: 3
+^task:[[:space:]]*#\?<id>[[:space:]]*$
+task: 3 (rework)
+task: #3
+3
+date -Is
+detail
+<YYYYMMDDTHHMMSS>_<от>_<KIND>[_task<id>].md
+-2
+-3
+.seen
+acked.log
+mail/<кому>/.seen
+grep -qxF
+team-wait.sh <run> <имя> [--kind K] [--task id] [--interval 15] [--max 3600]
+MAIL: <путь>
+TIMEOUT: …
+state/acked.log
+supervisor-tick.py ack <run> <файл>
+--report
+ACCEPTING…
+ACCEPT:
+^ACCEPT:.*\bPASS\b
+grep -l '^ACCEPT:.*FAIL'
+FAIL/?
+HH:MM <от> -> <кому> \| <первая строка> \| OPEN
+DELIVERED
+OPEN
+\|\s*OPEN\s*$
+^\d\d:\d\d\s
+HH:MM
+deliver_pending
+\| OPEN
+runs/<name>.json
+new|set <run> <name> key=value…
+files
+acceptance
+nonGoals
+checkAfterSec
+key=value
+engine/<role>/NNN.out.pid
+NNN.out.done
+status=done|failed
+NNN.out.taken
+.taken
+*/*.out.pid
+status=failed
+--status
+engine_result_unread
+.done
+status=
+exit=
+reason=
+started=
+ended=
+wall_s=
+session=
+out=
+result=
+report=
+cat <out>.done
+result
+session_id
+is_error
+failed
+session id:\s*([0-9a-fA-F-]{36})
+kimi -r (session_[0-9a-f-]+)
+--session-regex
+relayed
+checks_done
+committed
+grep '"role": *"<имя>"' … \| tail -3
+P<0-4> <kind>[ <кто>]: <детали>[  [ref]]
+^P[0-<wake>]
+.js
+.cjs
+python -m pytest
+--root
+pid=
+done=
+wait: …
+RUNNING
+DONE-UNREAD
+taken
+DEAD
+no calls for
+supervisor-wait: сплю на …
+WAKE: <причина>
+supervisor-tick.py:107  ^## Task\s+([^:\s]+)\s*:
+supervisor-tick.py:114  ^Status:\s*(\S+)
+supervisor-tick.py:117  ^Files to (?:create/edit|edit|create):\s*(.+)$
+supervisor-tick.py:125  ^## Phase:\s*(\S+)            (re.M)
+supervisor-tick.py:154  ^(from|kind|task|ts):\s*(.*)$
+supervisor-tick.py:196  \|\s*OPEN\s*$
+supervisor-tick.py:199  ^(\d{2}):(\d{2})\s
+supervisor-tick.py:263  ^(pytest|py\.test|jest|yarn|npm|craco)(\.c?js)?$
+supervisor-tick.py:394  ^ACCEPT:.*\bPASS\b             (re.M)
+supervisor-tick.py:79   NEEDS_ANSWER = QUESTION, ESCALATION, SENSITIVE, QUEUED, REVIEW_LOOP
+supervisor-tick.py:355  STUCK, ENGINE_DOWN → P0;  353 DONE → accept_needed
+team-wait.sh:42         sed -n '1,/^$/p'
+team-wait.sh:44         grep -qi "^kind:[[:space:]]*$kind[[:space:]]*$"
+team-wait.sh:47         grep -q "^task:[[:space:]]*#\?$task[[:space:]]*$"
+supervisor-wait.sh:39   grep -qE "^P[0-${wake#P}] "
+run-engine.sh:118-119   session id:\s*([0-9a-fA-F-]{36})  |  kimi -r (session_[0-9a-f-]+)
+supervisor-tick.py:226  "status=failed" in <out>.done
+lastEventAt
+date +%Y%m%dT%H%M%S
+<RUN DIR>/mail/<кодер>/<YYYYMMDDTHHMMSS>_unified-reviewer_VERDICT_task<id>.md
+from: unified-reviewer
+kind: VERDICT
+ts: <YYYY-MM-DDTHH:MM:SS+HH:MM>
+VERDICT: task #<id> — <APPROVED | CHANGES REQUESTED>
+Report: <RUN DIR>/reports/review-task<id>-unified-r<round>.md
+kind: SENSITIVE
+spawnedAt
+{"name": "unified-reviewer", "role": "reviewer", "task": "<id>", "status": "reviewing",
+"lastEventAt": "<то же заимствованное время>", "note": "task <id> r<round>"}
+"status": "idle"
+"task": ""
+- <критерий>: PASS | FAIL | UNCLEAR — <доказательство>
+ИТОГО: файлы <PASS|FAIL>, тесты <PASS|FAIL>, объём <PASS|FAIL>
+reports/review-task<id>-unified-r<round>.md
+reports/review-task<id>-second-r<round>.md
+reports/debate-r<N>-<имя>.md
+reports/handover-task<id>.md
+reports/deviations-<имя>-task<id>.md
+reports/research-<role>.md
+reports/risk-<n>.md
+reports/verify-<role>.md
+reports/visual/
+engine/accept-task<id>.diff
+engine/second-reviewer-<id>-1.diff
+engine/<role>-<n>.diff
+Depth: SENSITIVE (<почему>)
+Depth: ORDINARY
+CRITICAL
+MAJOR
+MINOR
+- [confidence:HIGH|MEDIUM|LOW] <file>:<line> — [security|logic|quality] <описание>
+[second:<engine>]
+Не подтверждено (второе мнение)
+-second-r1.md
+HH:MM | ожидание: … | факт: … | сделано: …
+[task #<id>] <заголовок>
+From Phase 3 safety scan
+.legacy-todo.md
+<YYYY-MM-DD> — deferred from feature "<имя>"
+Second opinions
+- second-reviewer-<id>: task #<id>, spawned <HH:MM>
+ls <RUN DIR>/reports/ | grep -oE '^review-task[^-]+-second-r' | sort -u | wc -l      # задач со вторым мнением
+grep -h '\[second:' <RUN DIR>/reports/review-task*-unified-r*.md | wc -l              # подтверждено
+предложено = подтверждено + строки под «### Не подтверждено (второе мнение)»
+ls <RUN DIR>/reports/accept-task*.md | wc -l                                          # принято чекером
+grep -l '^ACCEPT:.*FAIL' <RUN DIR>/reports/accept-task*.md                            # переоткрытые
+ls <RUN DIR>/reports/deviations-*.md 2>/dev/null | wc -l                              # журналы отклонений
+[security]
+[logic]
+[quality]
+roles
+codebase-researcher
+reference-researcher
+web-researcher
+risk-tester
+ci-verifier
+spec-verifier
+acceptance-checker
+browser-verifier
+legacy-scanner
+architect
+architect-frontend
+architect-backend
+architect-systems
+second-reviewer-{id}
+coder
+--mode ask
+Task()
+security-reviewer
+logic-reviewer
+quality-reviewer
+research-challenger
+research-critic
+rollback-critic
+_policy
+{prompt}
+{prompt_file}
+{sandbox}
+read-only
+workspace-write
+{mode_flags}
+mode
+{model}
+{effort}
+{session}
+failed to load models cache
+codex exec --skip-git-repo-check --sandbox {sandbox} -m {model} -c model_reasoning_effort="{effort}" "{prompt}" < /dev/null
+codex exec resume {session} "{prompt}" < /dev/null
+gpt-5.6-sol
+xhigh
+session id: <uuid>
+< /dev/null
+codex exec
+gpt-5.6
+kimi -m {model} -p "{prompt}"
+kimi -r {session} -p "{prompt}"
+kimi-code/k3
+--auto
+--yolo
+-p
+-S
+-r
+grok --sandbox {sandbox} --always-approve -m {model} --effort {effort} --session-id {session} -p "{prompt}"
+grok --sandbox {sandbox} --always-approve --effort {effort} -r {session} -p "{prompt}"
+grok-4.6
+high
+--always-approve
+uuidgen
+session.txt
+--session
+grok -r
+cursor-agent -p --trust --output-format json --model {model} {mode_flags} -- "$(cat {prompt_file})"
+cursor-agent -p --trust --output-format json --model {model} {mode_flags} --resume {session} -- "$(cat {prompt_file})"
+cursor-grok-4.6-xhigh
+--sandbox enabled -f
+grok-4.7-xhigh-fast
+cursor-agent
+agent
+--trust
+backend/.env
+~/.local/bin
+~/.local/share/cursor-agent/versions/
+PATH="$HOME/.local/bin:$PATH"
+cursor-agent --list-models
+engines.cursor.cmd
+cmd:    cursor-agent -p --trust --output-format json --model {model} {mode_flags} -- "$(cat {prompt_file})"
+resume: cursor-agent -p --trust --output-format json --model {model} {mode_flags} --resume {session} -- "$(cat {prompt_file})"
+cmd
+resume
+engines.cursor
+roles.<id>.model
+engines.cursor.model
+engines.cursor.mode_flags.read
+.write
+--sandbox
+enabled
+-f
+"$(cat {prompt_file})"
+"{prompt}"
+'{prompt}'
+engine/<role>/session.txt
+"architect-backend": "cursor"
+PATH="$HOME/.local/bin:$PATH" {plugin}/scripts/run-engine.sh --role architect-backend \
+--run-dir <RUN DIR> --prompt <RUN DIR>/engine/architect-backend/draft.prompt.md \
+--engine cursor --report debate-r1-architect-backend.md --timeout 1800 \
+-- cursor-agent -p --trust --output-format json --model grok-4.7-xhigh-fast --mode ask -- '{prompt}'
+roles.second-reviewer.model
+gpt-5.6-sol-high
+PATH="$HOME/.local/bin:$PATH" {plugin}/scripts/run-engine.sh --role second-reviewer-3 \
+--run-dir <RUN DIR> --prompt <RUN DIR>/engine/second-reviewer-3/draft.prompt.md \
+--engine cursor --task 3 --report review-task3-second-r1.md --timeout 1800 \
+-- cursor-agent -p --trust --output-format json --model gpt-5.6-sol-high --mode ask -- '{prompt}'
+roles.risk-tester
+composer-2.5
+PATH="$HOME/.local/bin:$PATH" {plugin}/scripts/run-engine.sh --role risk-tester-1 \
+--run-dir <RUN DIR> --prompt <RUN DIR>/engine/risk-tester-1/draft.prompt.md \
+--engine cursor --task 3 --report risk-1.md --timeout 3600 \
+-- cursor-agent -p --trust --output-format json --model composer-2.5 --sandbox enabled -f -- '{prompt}'
+<RUN DIR>/engine/risk-tester-1/session.txt
+--engine cursor --task 3 --timeout 3600 \
+-- cursor-agent -p --trust --output-format json --model composer-2.5 --sandbox enabled -f --resume <session> -- '{prompt}'
+{plugin}
+LAUNCHER:
+--session <uuid>
+--session-id
+session
+model: opus
+color: cyan
+tools: Read, Grep, Glob, LSP, Bash, Write, Edit, SendMessage
+model: sonnet
+color: orange
+tools: Bash, Read, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__get_page_text
+color: yellow
+tools: Bash, Read, Grep, Glob
+model: haiku
+color: white
+tools: Read, Grep, Glob, Bash, LSP
+color: green
+tools: Read, Grep, Glob, LSP, Bash, Write, SendMessage
+tools: Read, Grep, Glob, LSP, Bash, Write
+tools: Read, Grep, Glob, LSP, Bash
+color: purple
+tools: Read, Write, Grep, Glob, LSP, SendMessage
+
+# === ручные строки (каждая с пометкой-комментарием над ней) ===
+# ручная: ожидание маркера готовности движка — строка из шапки нашего run-engine.sh (интерфейс скрипта)
+until [ -f <out>.done ]; do sleep 5; done; cat <out>.done
+# ручная: справка нашего engine-sessions.py (интерфейс скрипта)
+engine-sessions.py [project_dir] [--since HH:MM] [--json]
+# ручная: имя теста из нашего scripts/tests/test_supervisor_tick.py (тесты переносятся побайтно, ровно 50)
+test_a_role_without_a_task_is_waiting_not_silent
+# ручная: параметр инструмента Bash в Claude Code для фоновых команд
+Bash(run_in_background=true):
+run_in_background: true
+# ручная: команда цикла супервизора (наш supervisor-wait.sh)
+bash {plugin}/scripts/supervisor-wait.sh .claude/teams/<team> --root <корень>
+# ручная: тестовая команда скриптов плагина (PLAN.md, общие правила)
+python3 -m unittest discover -s scripts/tests
+# ручная: статусы плана и строки задачи, которые разбирает тик (DECISIONS п.3)
+TODO → IN_PROGRESS(coder-N) → IN_REVIEW(coder-N) → ACCEPTING(coder-N) → DONE; REOPENED(coder-M)
+Status: TODO
+Blocked by: none
+# ручная: имена разделов VERIFICATION_PLAN.md, которые фаза 3 раздаёт проверяющим (L11), и роль design-critic
+Definition of Done
+Business Criteria
+Risk Mitigation Checks
+Human Checks
+design-critic
+# ручная: имена файлов прогона (PROTOCOL_ANCHORS в tools/overlap_check.py)
+PLAN.md, state.md, DECISIONS.md, VERIFICATION_PLAN.md, VERIFICATION_REPORT.md, LEGACY_REPORT.md, ledger.jsonl, pending.log, supervisor.json, SKILL.md
