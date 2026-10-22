@@ -60,7 +60,7 @@ What ships in the plugin:
 | Agents | `coder`, `unified-reviewer`, `tech-lead`, `architect`, `proxy-teammate`, `codebase-researcher`, `reference-researcher`, `risk-tester`, `spec-verifier`, `ci-verifier`, `browser-verifier` |
 | Scripts | `supervisor-tick.py`, `supervisor-wait.sh`, `run-state.py`, `team-mail.sh`, `team-wait.sh`, `run-engine.sh`, `engine-sessions.py` |
 
-Requirements: Claude Code (builds 2.1.27x to 2.1.280, per the dated notes in
+Requirements: Claude Code (builds 2.1.27x to 2.1.308, per the dated notes in
 `plugins/supertick/skills/team-feature/references/team-runtime.md`), `bash`,
 `python3` with the standard library only, and `git`. The tick's `busy` rule reads `/proc`, so it
 applies on Linux and is simply skipped elsewhere. Role and skill prompts are written in Russian;
@@ -118,9 +118,17 @@ are in [docs/measurements.md](docs/measurements.md) (in Russian).
 
 ## Install
 
+From your terminal:
+
 ```bash
 claude plugin marketplace add denizen24/supertick
 claude plugin install supertick@supertick
+```
+
+Or from inside a running Claude Code session (v2.1.275+):
+
+```
+/plugin install supertick --marketplace denizen24/supertick
 ```
 
 Restart the Claude Code session afterwards; skills and agents are loaded at startup. An update
