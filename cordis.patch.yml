@@ -1,0 +1,4 @@
+# Host-only: no client bundle or replacement web server.
+- insert:
+    - id: supertick
+      name: dsh-supertick

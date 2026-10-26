@@ -1,4 +1,7 @@
-.claude/teams/
+node_modules/
 __pycache__/
-.pytest_cache/
-*.pyc
+*.py[cod]
+*.tgz
+SUPERTICK/
+*.bak
+test-out.txt

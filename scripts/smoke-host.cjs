@@ -1,0 +1,58 @@
+// Development-only smoke using installed DSH services inside Electron's ASAR loader.
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { registerHooks } = require('node:module');
+const host = process.env.DSH_HOST;
+if (!host) throw new Error('Set DSH_HOST to the dsh directory inside your DeepSeek Harness app.asar');
+const root = path.resolve(__dirname, '..');
+const hostModule = name => `${host}/node_modules/@deepseek-ai/${name}/lib/index.js`;
+registerHooks({ resolve(specifier, context, next) {
+  if (specifier === '@deepseek-ai/dsh-tools' && context.parentURL?.startsWith(pathToFileURL(root).href)) return { url: pathToFileURL(hostModule('dsh-tools')).href, shortCircuit: true };
+  return next(specifier, context);
+} });
+
+(async () => {
+  const { Context } = require(hostModule('cordis'));
+  const { default: LocalFS } = require(hostModule('dsh-fs-local'));
+  const { default: Tools } = require(hostModule('dsh-tools'));
+  const { default: Skills } = require(hostModule('dsh-skill'));
+  const { default: Jobs } = require(hostModule('dsh-jobs-local'));
+  const ctx = new Context();
+  const ownerCtx = new Context();
+  const owner = { id: 'supertick-smoke', ctx: ownerCtx, session: { append() {} } };
+  ctx.provide('systemPrompt', { tools() {}, section() {} });
+  ctx.provide('agents', { get(id) { return id === owner.id ? owner : undefined; } });
+  ctx.provide('workingDirectory', { async ensure() { return root; } });
+  new LocalFS(ctx, { cwd: root, diffBasisMaxBytes: 262144 });
+  new Tools(ctx);
+  new Skills(ctx);
+  new Jobs(ctx, { maxConcurrentJobsPerOwner: 4, retainBytes: 1048576, settledRetainBytes: 1048576, pumpPollMs: 100 });
+  ctx.jobs.attachController('smoke (not wakeup controller)');
+  const plugin = await import(pathToFileURL(path.join(root, 'index.js')).href);
+  const fiber = ctx.plugin(plugin);
+  await fiber.await();
+  const skillNames = (await ctx.skills.list({cwd:root})).map(item => item.name).sort();
+  assert.deepEqual(skillNames, ['supertick','supertick-conventions','supertick-interview']);
+  const tool = ctx.tools.get('supertick_monitor');
+  assert.ok(tool, 'plugin registered tool');
+  assert.equal(tool.parameters.properties.run.type, 'string');
+  const exec = { agent: owner, signal: new AbortController().signal, callId:'smoke-call',rootCallId:'smoke-call' };
+  const run = 'SUPERTICK/feature-native-plugin';
+  const statusResult = await tool.execute({run,action:'status'}, exec);
+  console.log('STATUS_RESULT', JSON.stringify(statusResult));
+  const watchResult = await tool.execute({run,action:'watch',timeout_seconds:5,interval_seconds:2}, exec);
+  console.log('WATCH_RESULT', JSON.stringify(watchResult));
+  const jobs = ctx.jobs.list(owner.id);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].kind, 'supertick');
+  assert.throws(() => ctx.jobs.read(jobs[0].id, 'another-session'));
+  await ctx.jobs.kill(jobs[0].id, owner.id, 'smoke cancellation');
+  console.log('KILL_RESULT', JSON.stringify(ctx.jobs.get(jobs[0].id, owner.id)));
+  await fiber.dispose();
+  assert.equal(ctx.tools.get('supertick_monitor'), undefined);
+  assert.equal((await ctx.skills.list({cwd:root})).length, 0);
+  await ownerCtx.fiber.dispose();
+  await ctx.fiber.dispose();
+  console.log('SMOKE_PASS real Cordis/defineTool/tools/skills/local-fs/jobs; ownership/cancellation/disposal. Wakeup delivery not exercised by this isolated smoke.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

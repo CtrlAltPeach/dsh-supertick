@@ -5,35 +5,20 @@ on:
   pull_request:
 
 jobs:
-  tests:
+  node:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/*.test.mjs
 
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Script tests (scripts/tests)
-        run: |
-          cd plugins/supertick && python3 -m unittest discover -s scripts/tests -v
-
-      - name: Tool tests (tools/tests)
-        run: |
-          if [ -d tools/tests ]; then python3 -m unittest discover -s tools/tests -v; fi
-
-      - name: Shell syntax (bash -n)
-        run: |
-          for f in plugins/supertick/scripts/*.sh; do bash -n "$f"; done
-
-      - name: No foreign plugin types in plugins/supertick
-        run: |
-          if grep -RIn "agent-teams:" plugins/supertick; then exit 1; fi
-
-      - name: Manifest versions match
-        run: |
-          python3 -c "import json,sys; m=json.load(open('.claude-plugin/marketplace.json')); p=json.load(open('plugins/supertick/.claude-plugin/plugin.json')); v=[x['version'] for x in m['plugins'] if x['name']=='supertick']; print('marketplace', v, 'plugin', p['version']); sys.exit(0 if v==[p['version']] else 1)"
-
-      - name: No caches tracked in git
-        run: |
-          if git ls-files | grep -E '__pycache__|pytest_cache|\.pyc$'; then exit 1; fi
+      - run: python -m unittest discover -s tests -v
