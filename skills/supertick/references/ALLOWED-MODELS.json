@@ -1,0 +1,7 @@
+{
+  "$comment": "Single source of truth for child-agent LLMs. Skills substitute {{ALLOWED_MODELS}} with these provider/model pairs at run time; supervisor.py validates RUN.json agents against them. 'use' is the role hint per model. Edit this file to reconfigure - no code changes.",
+  "models": [
+    { "provider": "zai-coding-cn", "model": "glm-5.3-flash", "use": "bounded research, risk checks, mechanical verification" },
+    { "provider": "zai-coding-cn", "model": "glm-5.3", "use": "architecture, code, review, acceptance, difficult debugging" }
+  ]
+}
