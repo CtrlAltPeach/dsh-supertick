@@ -65,7 +65,7 @@ The plugin does not start agents on its own, does not modify `RUN.json`, and nev
 Snapshot (run path relative to the calling session's cwd, or absolute):
 
 ```json
-{"run": "SUPERTICK/feature-example", "action": "status"}
+{"run": "RUNS/feature-example", "action": "status"}
 ```
 
 Returns the phase, counts, tasks/agents/jobs from `RUN.json`, and the presence and claimed verdicts of reports, plus a composite `revision`. Input format, size limits and path containment are validated; reads go through `ctx.fs`. Snapshot limits: `RUN.json` 512 KiB, a report 128 KiB, 2 MiB total; at most 200 tasks, 400 agents and 400 jobs. Exceeding a limit is an error, not a partial pass.
@@ -73,7 +73,7 @@ Returns the phase, counts, tasks/agents/jobs from `RUN.json`, and the presence a
 One bounded background watch:
 
 ```json
-{"run": "SUPERTICK/feature-example", "action": "watch", "timeout_seconds": 900, "interval_seconds": 5}
+{"run": "RUNS/feature-example", "action": "watch", "timeout_seconds": 900, "interval_seconds": 5}
 ```
 
 Returns a `job_id`. DSH notifies the owner when the ledger changes, on error, or on timeout; collect with `job_output`, cancel with `job_kill`. Pass `since_revision` from the previous snapshot so a change between `status` and the watch start cannot be missed. Interval 2–60 s, timeout 5–3600 s. Watches are session-bound: they do not survive a DSH restart and are cancelled when the plugin is removed. A watch reports the first change; it does not promise to wait for the whole feature to finish. A timeout is not a failed test.
@@ -82,14 +82,15 @@ This is **ledger observation**, not process liveness and not gate validation. Th
 
 ## Run state
 
-A run lives at `<project>/SUPERTICK/feature-<slug>/`:
+A run lives at `<project>/RUNS/feature-<slug>/`. A run is the whole supervised
+effort — coding tasks and external tool tasks alike:
 
 - `RUN.json` — the single source of claimed task/agent/job statuses
 - `PLAN.MD` — criteria and decisions
 - `reports/<task>/attempt-<n>/` — change snapshot, review, acceptance
 - `reports/verification.json` — the integration checks that were actually run
 
-Contracts: [skills/supertick/references/STATE.MD](skills/supertick/references/STATE.MD), roles: [skills/supertick/references/ROLES.MD](skills/supertick/references/ROLES.MD). Do not commit runs or secrets automatically.
+Contracts: [skills/supertick/references/STATE.MD](skills/supertick/references/STATE.MD), roles: [skills/supertick/references/ROLES.MD](skills/supertick/references/ROLES.MD). Do not commit runs or secrets automatically. Legacy runs created before v0.4.0 live at `SUPERTICK/feature-<slug>/` and keep working with `tick`/`wait`; `init` only creates `RUNS/` runs and refuses a name that already exists under either root.
 
 ## Run operations (schema 2)
 

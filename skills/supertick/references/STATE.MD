@@ -1,6 +1,6 @@
 # State contract (schema 2)
 
-Paths below are relative to one SUPERTICK/feature-<slug> run. The lead is the only
+Paths below are relative to one RUNS/feature-<slug> run (legacy SUPERTICK/feature-<slug> run directories remain valid for tick/wait). The lead is the only
 writer of RUN.json and PLAN.MD; agents write their own attempt-local reports.
 Do not edit RUN.json via a shell while another writer is active. Use inspect/stat
 and the returned SHA-256 revision in a CAS file-tool edit. Preserve earlier reports.

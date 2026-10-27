@@ -19,7 +19,7 @@ with tarfile.open(archive, "r:gz") as bundle:
         assert item.isfile(), f"non-regular package member: {item.name}"
         relative = path.relative_to("package").as_posix()
         assert relative not in seen, f"duplicate member: {relative}"
-        assert not ({"tests", "SUPERTICK", "__pycache__"} & set(path.parts)), relative
+        assert not ({"tests", "SUPERTICK", "RUNS", "__pycache__"} & set(path.parts)), relative
         assert not relative.endswith((".pyc", ".pyo")), relative
         source = root.joinpath(*PurePosixPath(relative).parts)
         assert source.is_file(), relative

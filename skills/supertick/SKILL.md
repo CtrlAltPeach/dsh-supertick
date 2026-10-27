@@ -53,7 +53,9 @@ never guess or silently substitute a model.
    - **COMPLEX**: migration, security boundary, compatibility constraints, or competing
      designs with material tradeoffs; add architect + risk-tester before implementation.
    Ask the user about material design forks, not every implementation detail.
-5. Establish one persistent run at `<project>/SUPERTICK/feature-<slug>/`.
+5. Establish one persistent run at `<project>/RUNS/feature-<slug>/`. A run is the
+   whole supervised effort — coding tasks and external tool tasks alike. Legacy
+   `SUPERTICK/feature-<slug>/` runs resume in place; `init` creates only `RUNS/`.
    Resolve Python with `load_workspace_dependencies`; prefer that absolute executable.
    Run the bundled `scripts/supervisor.py init <absolute-project> <slug>` only for a
    NEW run. It refuses existing runs, linked paths and unsafe names. No dependencies

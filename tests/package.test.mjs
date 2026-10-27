@@ -14,7 +14,7 @@ test('package declares a native DSH bundle, closed public exports and required s
     assert.ok(pkg.files.includes(name));
     assert.ok(existsSync(new URL(name, root)), `missing source ${name}`);
   }
-  for (const name of ['tests', 'SUPERTICK', 'CHECKPOINT.md', 'scripts', 'skills']) assert.ok(!pkg.files.includes(name));
+  for (const name of ['tests', 'SUPERTICK', 'RUNS', 'CHECKPOINT.md', 'scripts', 'skills']) assert.ok(!pkg.files.includes(name));
   for (const name of ['skills/*/SKILL.md', 'skills/supertick/references/*.MD', 'skills/supertick/references/ALLOWED-MODELS.json', 'skills/supertick/scripts/supervisor.py']) assert.ok(pkg.files.includes(name));
   assert.ok(read('cordis.patch.yml').includes('name: dsh-supertick'));
 });
