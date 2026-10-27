@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install this pack as three filesystem skills, without changing DSH itself."""
+"""Install this pack as four filesystem skills, without changing DSH itself."""
 import argparse
 import json
 from pathlib import Path
@@ -8,13 +8,15 @@ import sys
 FILES = (
     "supertick/references/STATE.MD",
     "supertick/references/ROLES.MD",
+    "supertick/references/ALLOWED-MODELS.json",
     "supertick/scripts/supervisor.py",
     # Discovery entries last: do not advertise a skill before its resources exist.
     "supertick/SKILL.md",
     "supertick-interview/SKILL.md",
     "supertick-conventions/SKILL.md",
+    "supertick-runs/SKILL.md",
 )
-NAMES = ("supertick", "supertick-interview", "supertick-conventions")
+NAMES = ("supertick", "supertick-interview", "supertick-conventions", "supertick-runs")
 
 
 def plain(path):

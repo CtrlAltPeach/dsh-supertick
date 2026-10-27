@@ -20,7 +20,7 @@ test('package declares a native DSH bundle, closed public exports and required s
 });
 
 test('every packaged skill has exact metadata parsed by plugin and local resources', () => {
-  for (const name of ['supertick', 'supertick-conventions', 'supertick-interview']) {
+  for (const name of ['supertick', 'supertick-conventions', 'supertick-interview', 'supertick-runs']) {
     const text = read(`skills/${name}/SKILL.md`);
     const frontmatter = /^---\r?\n([\s\S]+?)\r?\n---\r?\n([\s\S]*)$/.exec(text);
     assert.ok(frontmatter, name);

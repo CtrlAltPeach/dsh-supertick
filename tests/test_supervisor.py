@@ -346,5 +346,318 @@ class TestTickIsReadOnly(RunDirTestCase):
         self.assertEqual(listing_before, sorted(p.name for p in self.run.rglob("*")))
 
 
+def make_run_task(tid, status="TODO", attempt=1, criteria=("artifacts complete",),
+                  run_id="run-a", run_dir="results/toolx/run-a", paid=False, events=None,
+                  operator_id=None, reviewer_id=None, checker_id=None, auditor_id=None,
+                  launch="dsh-job", depends_on=()):
+    authorization = {"paid": paid}
+    if paid:
+        authorization = {"paid": True, "granted_by": "user", "ref": "m0001", "scope": "attempt 1"}
+    return {"id": tid, "kind": "run", "title": f"run {tid}", "status": status, "attempt": attempt,
+            "criteria": list(criteria), "depends_on": list(depends_on),
+            "run_manifest": {"tool": "toolx", "command": ["toolx", "--go"], "run_id": run_id,
+                              "run_dir": run_dir, "launch": launch},
+            "authorization": authorization, "events": events if events is not None else [],
+            "operator_id": operator_id, "reviewer_id": reviewer_id,
+            "checker_id": checker_id, "auditor_id": auditor_id}
+
+
+def make_state2(project_root, tasks=(), agents=(), jobs=(), phase="implementation", max_coders=2):
+    return {"schema": 2, "name": "feat", "project_root": str(project_root), "phase": phase,
+            "complexity": "SIMPLE", "max_coders": max_coders, "created_at": NOW,
+            "updated_at": NOW, "tasks": list(tasks), "agents": list(agents), "jobs": list(jobs)}
+
+
+def make_event(type_, reason="r", ref="job-1", prior_run_id=None):
+    event = {"type": type_, "at": NOW, "reason": reason, "ref": ref}
+    if prior_run_id is not None:
+        event["prior_run_id"] = prior_run_id
+    return event
+
+
+class RunTaskTestCase(RunDirTestCase):
+    def write_run_report(self, task, kind, agent_id, verdict="PASS", criteria=None,
+                         results=("PASS",), run_id=None, attempt=None):
+        attempt = attempt or task["attempt"]
+        path = self.run / supervisor.report_path(task, kind)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        report = {"kind": kind, "task": task["id"], "attempt": attempt,
+                  "run_id": run_id or task["run_manifest"]["run_id"], "agent_id": agent_id,
+                  "verdict": verdict, "summary": "s",
+                  "checks": [{"criterion": c, "result": r, "evidence": "e"}
+                             for c, r in zip(criteria if criteria is not None else task["criteria"], results)]}
+        path.write_text(json.dumps(report), encoding="utf-8")
+        return report
+
+    def write_usage_audit(self, task, agent_id, calls=3):
+        path = self.run / supervisor.report_path(task, "usage_audit")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        report = {"kind": "usage_audit", "task": task["id"], "attempt": task["attempt"],
+                  "run_id": task["run_manifest"]["run_id"], "agent_id": agent_id,
+                  "calls_total": calls, "by_stage": [{"stage": "judge", "calls": calls}],
+                  "tokens": {"input": 10, "output": 5, "cache_read": 0, "cache_write": 0},
+                  "unknown_usage_calls": [],
+                  "reconcile": [{"source": "usage.json", "note": "3 calls"}],
+                  "cost_estimate": {"tariffs_ref": "tariffs.json", "total": 0.01,
+                                    "currency": "USD", "note": "estimate, not invoice"}}
+        path.write_text(json.dumps(report), encoding="utf-8")
+        return report
+
+    def done_run_setup(self, paid=True, write_audit=True):
+        task = make_run_task("run-1", status="DONE", paid=paid, operator_id="op-1",
+                             reviewer_id="rev-1", checker_id="chk-1", auditor_id="aud-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1", status="inactive"),
+                  make_agent("rev-1", role="reviewer", task="run-1", status="inactive"),
+                  make_agent("chk-1", role="artifact-verifier", task="run-1", status="inactive"),
+                  make_agent("aud-1", role="usage-auditor", task="run-1", status="inactive")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "collected", "task": "run-1"}]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+        self.write_run_report(task, "run_integrity", "rev-1")
+        self.write_run_report(task, "acceptance", "chk-1")
+        if paid and write_audit:
+            self.write_usage_audit(task, "aud-1")
+        return task
+
+
+class TestRunContract(RunTaskTestCase):
+    def test_full_lifecycle_valid(self):
+        self.done_run_setup()
+        supervisor.validate(json.loads((self.run / "RUN.json").read_text(encoding="utf-8")))
+
+    def test_mixed_code_and_run_tasks_valid(self):
+        code = make_task("task-1", status="DONE", change_id=DIGEST, coder_id="c1",
+                         reviewer_id="r1", checker_id="k1")
+        run = make_run_task("run-1")
+        agents = [make_agent("c1", task="task-1", status="inactive"),
+                  make_agent("r1", role="reviewer", task="task-1", status="inactive"),
+                  make_agent("k1", role="checker", task="task-1", status="inactive")]
+        state = make_state2(self.run, tasks=[code, run], agents=agents)
+        supervisor.validate(state)
+
+    def test_run_task_rejected_in_schema_1(self):
+        state = make_state(self.run, tasks=[make_run_task("run-1")])
+        with self.assertRaises(Invalid):
+            supervisor.validate(state)
+
+    def test_manifest_fields_required(self):
+        for mutate, message in ((lambda t: t["run_manifest"].pop("run_id"), "run_id"),
+                                (lambda t: t["run_manifest"].pop("run_dir"), "run_dir"),
+                                (lambda t: t["run_manifest"].pop("launch"), "launch"),
+                                (lambda t: t["run_manifest"].pop("command"), "command")):
+            task = make_run_task("run-1")
+            mutate(task)
+            with self.assertRaises(Invalid):
+                supervisor.validate(make_state2(self.run, tasks=[task]))
+
+    def test_run_task_cannot_use_files_or_change_id(self):
+        for mutate in (lambda t: t.update(files=["src/a.py"]),
+                       lambda t: t.update(change_id=DIGEST)):
+            task = make_run_task("run-1")
+            mutate(task)
+            with self.assertRaises(Invalid):
+                supervisor.validate(make_state2(self.run, tasks=[task]))
+
+    def test_paid_run_requires_go_reference(self):
+        task = make_run_task("run-1", paid=True)
+        task["authorization"] = {"paid": True}
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[task]))
+        task["authorization"] = {"paid": True, "granted_by": "user", "ref": "m0001", "scope": "s"}
+        supervisor.validate(make_state2(self.run, tasks=[task]))
+
+    def test_paid_done_requires_auditor_binding(self):
+        task = make_run_task("run-1", status="DONE", paid=True, operator_id="op-1",
+                             reviewer_id="rev-1", checker_id="chk-1", auditor_id=None)
+        agents = [make_agent("op-1", role="run-operator", task="run-1", status="inactive"),
+                  make_agent("rev-1", role="reviewer", task="run-1", status="inactive"),
+                  make_agent("chk-1", role="artifact-verifier", task="run-1", status="inactive")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "collected", "task": "run-1"}]
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+
+    def test_running_requires_operator_and_bound_job(self):
+        task = make_run_task("run-1", status="RUNNING")
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[task]))
+        task["operator_id"] = "op-1"
+        agents = [make_agent("op-1", role="run-operator", task="run-1")]
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[task], agents=agents))
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "running", "task": "run-1"}]
+        supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+
+    def test_past_running_requires_collected_job(self):
+        task = make_run_task("run-1", status="REVIEW", operator_id="op-1", reviewer_id="rev-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1", status="inactive"),
+                  make_agent("rev-1", role="reviewer", task="run-1", status="inactive")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "running", "task": "run-1"}]
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+        jobs[0]["status"] = "collected"
+        supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+
+    def test_external_run_must_not_bind_jobs(self):
+        task = make_run_task("run-1", status="RUNNING", launch="external", operator_id="op-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "running", "task": "run-1"}]
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+
+    def test_run_dir_ownership_case_insensitive(self):
+        first = make_run_task("run-1", status="RUNNING", operator_id="op-1")
+        second = make_run_task("run-2", status="RUNNING", run_dir="RESULTS/TOOLX/RUN-A", operator_id="op-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "running", "task": "run-1"}]
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[first, second], agents=agents, jobs=jobs))
+
+    def test_file_inside_run_dir_rejected(self):
+        run_task = make_run_task("run-1", status="RUNNING", operator_id="op-1")
+        code = make_task("task-1", status="RUNNING", files=("results/toolx/run-a/out.txt",), coder_id="c1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1"), make_agent("c1", task="task-1")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "running", "task": "run-1"}]
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[run_task, code], agents=agents, jobs=jobs))
+
+    def test_boundary_accounting(self):
+        task = make_run_task("run-1", status="RUNNING", attempt=2, run_id="run-b",
+                             events=[make_event("boundary", prior_run_id="run-a")], operator_id="op-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1")]
+        jobs = [{"id": "job-2", "purpose": "run toolx", "status": "running", "task": "run-1"}]
+        supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+        task["events"].append(make_event("boundary", prior_run_id="run-b"))
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+
+    def test_event_ordering_rules(self):
+        agents = [make_agent("op-1", role="run-operator", task="run-1")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "running", "task": "run-1"}]
+        cases = [
+            (dict(events=[make_event("resumed")]), Invalid),
+            (dict(events=[make_event("stopped"), make_event("resumed")]), None),
+            (dict(events=[make_event("fixed")]), None),
+            (dict(events=[make_event("fixed"), make_event("fixed")]), Invalid),
+            (dict(run_id="run-b", attempt=2, events=[make_event("boundary", prior_run_id="run-a")]), None),
+            (dict(run_id="run-b", attempt=2, events=[make_event("boundary", prior_run_id="run-b")]), Invalid),
+        ]
+        for kwargs, expected in cases:
+            task = make_run_task("run-1", status="RUNNING", operator_id="op-1", **kwargs)
+            if expected is Invalid:
+                with self.assertRaises(Invalid):
+                    supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+            else:
+                supervisor.validate(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+        done_agents = [make_agent("op-1", role="run-operator", task="run-1", status="inactive"),
+                       make_agent("rev-1", role="reviewer", task="run-1", status="inactive"),
+                       make_agent("chk-1", role="artifact-verifier", task="run-1", status="inactive")]
+        done_jobs = [{"id": "job-1", "purpose": "run toolx", "status": "collected", "task": "run-1"}]
+        stopped_done = make_run_task("run-1", status="DONE", events=[make_event("stopped")],
+                                     operator_id="op-1", reviewer_id="rev-1", checker_id="chk-1")
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[stopped_done], agents=done_agents, jobs=done_jobs))
+
+
+class TestRunTick(RunTaskTestCase):
+    def test_paid_done_requires_usage_audit_report(self):
+        self.done_run_setup(paid=True, write_audit=False)
+        result = supervisor.tick(str(self.run))
+        self.assertTrue([a for a in result["actions"]
+                         if a["kind"] == "invalid_report" and "usage-audit.json" in a["ref"]])
+        task = json.loads((self.run / "RUN.json").read_text(encoding="utf-8"))["tasks"][0]
+        self.write_usage_audit(task, "aud-1")
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"]
+                          if a["priority"] == "P0" or a["kind"] == "invalid_report"])
+
+    def test_unpaid_done_needs_no_usage_audit(self):
+        self.done_run_setup(paid=False, write_audit=False)
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"]
+                          if a["priority"] == "P0" or a["kind"] == "invalid_report"])
+
+    def test_collect_pending_flagged(self):
+        task = make_run_task("run-1", status="RUNNING", operator_id="op-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "collected", "task": "run-1"}]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+        result = supervisor.tick(str(self.run))
+        self.assertTrue([a for a in result["actions"] if a["kind"] == "collect_pending"])
+        self.write_run_report(task, "run_integrity", "rev-1")
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "collect_pending"])
+
+    def test_review_report_ready_uses_run_paths(self):
+        task = make_run_task("run-1", status="REVIEW", operator_id="op-1", reviewer_id="rev-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1", status="inactive"),
+                  make_agent("rev-1", role="reviewer", task="run-1", status="inactive")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "collected", "task": "run-1"}]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "report_ready"])
+        self.write_run_report(task, "run_integrity", "rev-1")
+        result = supervisor.tick(str(self.run))
+        ready = [a for a in result["actions"] if a["kind"] == "report_ready"]
+        self.assertTrue(ready)
+        self.assertIn("run-integrity.json", ready[0]["ref"])
+
+    def test_acceptance_must_cover_run_criteria(self):
+        self.done_run_setup(paid=False, write_audit=False)
+        task = json.loads((self.run / "RUN.json").read_text(encoding="utf-8"))["tasks"][0]
+        self.write_run_report(task, "acceptance", "chk-1", criteria=("wrong criterion",))
+        result = supervisor.tick(str(self.run))
+        self.assertTrue([a for a in result["actions"]
+                         if a["kind"] == "invalid_report" and "artifact-verification.json" in a["ref"]])
+
+
+class TestUsageAudit(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+
+    def test_aggregates_jsonl_usage_and_summary(self):
+        lines = [
+            {"stage": "judge", "model": "m-a", "usage": {"input": 100, "output": 50}},
+            {"stage": "judge", "model": "m-a", "usage": {"input": 10, "output": 5, "cache_read": 7}},
+            {"phase": "meta", "model": "m-b", "usage": {"prompt_tokens": 8, "completion_tokens": 4}},
+        ]
+        (self.dir / "audit.jsonl").write_text("\n".join(json.dumps(x) for x in lines), encoding="utf-8")
+        (self.dir / "usage.json").write_text(json.dumps({"usage": {"input": 200, "output": 100, "calls_total": 3}}), encoding="utf-8")
+        (self.dir / "summary.json").write_text(json.dumps({"evaluation": {"usage": {"input": 318, "output": 159}}}), encoding="utf-8")
+        draft = supervisor.usage_audit(str(self.dir), jsonl_names=["audit.jsonl"],
+                                       usage_names=["usage.json"], summary_names=["summary.json"])
+        self.assertEqual(draft["calls_total"], 3)
+        self.assertEqual({s["stage"]: s["calls"] for s in draft["by_stage"]}, {"judge": 2, "meta": 1})
+        self.assertEqual(draft["tokens"]["input"], 118)
+        self.assertEqual(draft["tokens"]["output"], 59)
+        self.assertEqual(draft["tokens"]["cache_read"], 7)
+        self.assertEqual(len(draft["reconcile"]), 3)
+        notes = {r["source"]: r["note"] for r in draft["reconcile"]}
+        self.assertIn("3 calls", notes["usage.json"])
+        self.assertIn("in=318", notes["summary.json"])
+
+    def test_unknown_usage_and_tariffs(self):
+        lines = [
+            {"stage": "judge", "model": "m-a", "usage": {"input": 1_000_000, "output": 1_000_000}},
+            {"stage": "judge", "model": "m-unknown", "usage": {"input": 5, "output": 5}},
+        ]
+        (self.dir / "audit.jsonl").write_text("\n".join(json.dumps(x) for x in lines), encoding="utf-8")
+        tariffs = {"currency": "USD", "models": {"m-a": {"input": 1.0, "output": 2.0}}}
+        (self.dir / "tariffs.json").write_text(json.dumps(tariffs), encoding="utf-8")
+        draft = supervisor.usage_audit(str(self.dir), jsonl_names=["audit.jsonl"], tariffs_path=str(self.dir / "tariffs.json"))
+        self.assertEqual(draft["cost_estimate"]["total"], 3.0)
+        self.assertEqual(draft["cost_estimate"]["note"], "estimate, not invoice")
+        self.assertTrue(any("m-unknown" in x for x in draft["unknown_usage_calls"]))
+
+    def test_invalid_json_line_rejected(self):
+        (self.dir / "audit.jsonl").write_text("{not json}\n", encoding="utf-8")
+        with self.assertRaises(Invalid):
+            supervisor.usage_audit(str(self.dir), jsonl_names=["audit.jsonl"])
+
+    def test_missing_artifact_rejected(self):
+        with self.assertRaises(Invalid):
+            supervisor.usage_audit(str(self.dir), jsonl_names=["nope.jsonl"])
+
+
 if __name__ == "__main__":
     unittest.main()

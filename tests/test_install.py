@@ -21,7 +21,7 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "skills"
             result = installer.install(target)
-            self.assertEqual(result["files"], 9)
+            self.assertEqual(result["files"], 12)
             for name in installer.NAMES:
                 self.assertEqual((target / name / "LICENSE").read_bytes(), (ROOT / "LICENSE").read_bytes())
             for relative in installer.FILES:

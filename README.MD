@@ -56,6 +56,7 @@ operator instead of guessing a model.
 - `supertick` — plan a feature, delegate disjoint coding tasks, review, independently accept each change, and verify the integrated result. For substantial features, migrations and refactors.
 - `supertick-interview` — turn an unclear feature idea into a bounded implementation brief before coding.
 - `supertick-conventions` — the collaboration rules: allowed models, single-writer ownership, evidence-based reports, native notifications, honest progress and safe recovery.
+- `supertick-runs` — hold long external tool runs (eval suites, builds, migrations, batch jobs, paid API evals) via a delegated run operator: frozen inputs, explicit paid-run GO, run-integrity/artifact-verification/usage-audit reports.
 
 The plugin does not start agents on its own, does not modify `RUN.json`, and never commits, pushes or deploys.
 
@@ -90,6 +91,26 @@ A run lives at `<project>/SUPERTICK/feature-<slug>/`:
 
 Contracts: [skills/supertick/references/STATE.MD](skills/supertick/references/STATE.MD), roles: [skills/supertick/references/ROLES.MD](skills/supertick/references/ROLES.MD). Do not commit runs or secrets automatically.
 
+## Run operations (schema 2)
+
+A task whose work is a long external process — an eval suite, a build, a migration,
+a batch or training job — is a `kind: "run"` task instead of a code change. It
+carries a `run_manifest` (`tool`, argv `command`, the tool's own `run_id`, an
+exclusive case-insensitive `run_dir`, `launch: "dsh-job"|"external"`, optional
+`model_pin`/`provider_pin`/`input_freeze`), an `authorization` block and an
+append-only `events` list. Run tasks are rejected in schema 1 states and may not
+use `files`/`change_id`; no code task may own files inside a claimed `run_dir`.
+
+Paid runs start only on an explicit user GO recorded in `authorization.ref`
+(delegation is never GO) and cannot reach DONE without a bound usage-auditor and
+a valid `usage-audit.json`. An attempt-changing break (validity-affecting fix,
+lost job, new GO) is recorded as a `boundary` event with `prior_run_id`;
+`attempt` is the number of boundaries + 1. The `supertick-runs` skill walks the
+whole flow: freeze inputs, preflight, dispatch a run-operator child (never the
+tested tool's model), hold via native job completion with bounded heartbeats,
+then review (`run-integrity.json`), verify artifacts (`artifact-verification.json`)
+and, for paid runs, audit usage.
+
 ## Optional Python supervisor
 
 Validates gates; never starts agents:
@@ -98,9 +119,10 @@ Validates gates; never starts agents:
 python skills/supertick/scripts/supervisor.py init <absolute-project> example
 python skills/supertick/scripts/supervisor.py tick <absolute-run>
 python skills/supertick/scripts/supervisor.py wait <absolute-run> --interval 20 --max 900
+python skills/supertick/scripts/supervisor.py usage-audit <absolute-run> --jsonl model_usage_audit.jsonl --usage usage.json --summary summary.json --tariffs tariffs.json
 ```
 
-`init` only creates a new run; `tick` is read-only. P0 — contradiction, P1 — action required, P4 — quiet. Exit 0 means a well-formed answer, not an acceptance pass.
+`init` only creates a new run; `tick` is read-only. P0 — contradiction, P1 — action required, P4 — quiet. Exit 0 means a well-formed answer, not an acceptance pass. `usage-audit` prints a read-only draft usage report to stdout: sources measure the same calls, so totals are taken from the most granular source (jsonl, then usage, then summary) and every source lands in `reconcile` with its own totals; tariff output is an "estimate, not invoice". For run tasks, `tick` flags `collect_pending` (P1) when a bound job was collected without a `run-integrity.json`, and P0 `invalid_report` when a paid DONE lacks a valid `usage-audit.json`.
 
 ## Tests and development scripts
 
@@ -114,7 +136,7 @@ Node tests cover observation, path safety, revisions, watch and cancel. Python t
 
 `scripts/smoke-host.cjs` is a development-only harness that mounts the plugin against installed DSH services (set the `DSH_HOST` env var to the `dsh` directory inside the app ASAR); it is not part of CI and does not test notification delivery to a live model. `scripts/inspect-host.mjs` (set `DSH_ASAR`) inspects the Electron ASAR read-only. `scripts/change-snapshot.mjs` and `scripts/verify-package.py` support the review/acceptance evidence flow and package verification.
 
-`python install.py` is the legacy filesystem-only way to install the three skills; it does not install the model tool.
+`python install.py` is the legacy filesystem-only way to install the four skills; it does not install the model tool.
 
 ## License
 
