@@ -3,5 +3,6 @@ __pycache__/
 *.py[cod]
 *.tgz
 /SUPERTICK/
+/RUNS/
 *.bak
 test-out.txt

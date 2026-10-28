@@ -428,8 +428,9 @@ def initialize(project, name):
     require(bool(ID.fullmatch(name)), "invalid run name")
     project = plain_path(project)
     require(project.is_dir(), "project directory does not exist")
-    run = inside(project, f"SUPERTICK/feature-{name}")
-    require(not run.exists(), "run already exists; choose resume or another name")
+    run = inside(project, f"RUNS/feature-{name}")
+    legacy = inside(project, f"SUPERTICK/feature-{name}")
+    require(not run.exists() and not legacy.exists(), "run already exists; choose resume or another name")
     run.mkdir(parents=True, exist_ok=False)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     state = {"schema": 2, "name": name, "project_root": str(project), "phase": "planning", "complexity": "SIMPLE", "max_coders": 2, "created_at": now, "updated_at": now, "tasks": [], "agents": [], "jobs": []}

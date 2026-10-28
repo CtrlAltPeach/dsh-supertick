@@ -44,7 +44,7 @@ class RunDirTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.project = Path(self._tmp.name)
-        self.run = self.project / "SUPERTICK" / "feature-feat"
+        self.run = self.project / "RUNS" / "feature-feat"
         self.run.mkdir(parents=True)
 
     def write_state(self, state):
@@ -72,6 +72,7 @@ class TestInitialize(unittest.TestCase):
 
     def test_init_creates_run(self):
         run = supervisor.initialize(str(self.project), "csv-export")
+        self.assertEqual(run, self.project / "RUNS" / "feature-csv-export")
         state = json.loads((run / "RUN.json").read_text(encoding="utf-8"))
         self.assertEqual(state["phase"], "planning")
         self.assertTrue((run / "PLAN.MD").is_file())
@@ -81,6 +82,23 @@ class TestInitialize(unittest.TestCase):
         supervisor.initialize(str(self.project), "feat")
         with self.assertRaises(Invalid):
             supervisor.initialize(str(self.project), "feat")
+
+    def test_legacy_run_blocks_reinit(self):
+        legacy = self.project / "SUPERTICK" / "feature-feat"
+        legacy.mkdir(parents=True)
+        (legacy / "RUN.json").write_text("{}", encoding="utf-8")
+        with self.assertRaises(Invalid):
+            supervisor.initialize(str(self.project), "feat")
+
+    def test_legacy_run_tick_still_works(self):
+        legacy = self.project / "SUPERTICK" / "feature-feat"
+        legacy.mkdir(parents=True)
+        state = {"schema": 2, "name": "feat", "project_root": str(self.project), "phase": "planning",
+                 "complexity": "SIMPLE", "max_coders": 2, "created_at": NOW, "updated_at": NOW,
+                 "tasks": [], "agents": [], "jobs": []}
+        (legacy / "RUN.json").write_text(json.dumps(state), encoding="utf-8")
+        result = supervisor.tick(str(legacy))
+        self.assertEqual(result["phase"], "planning")
 
     def test_bad_name_rejected(self):
         with self.assertRaises(Invalid):
