@@ -107,7 +107,7 @@ export async function snapshot(fs, runPath, signal) {
     fail('RUN.json: invalid JSON');
   }
   if (!run || typeof run !== 'object' || Array.isArray(run)) fail('RUN.json: not an object');
-  if (run.schema !== 1) fail('unsupported schema');
+  if (run.schema !== 1 && run.schema !== 2) fail('unsupported schema');
   if (typeof run.name !== 'string' || run.name.length > 256) fail('RUN.json: invalid name');
   if (typeof run.phase !== 'string' || run.phase.length > 64) fail('RUN.json: invalid phase');
 
@@ -125,15 +125,25 @@ export async function snapshot(fs, runPath, signal) {
     const attempt = finiteInt(t.attempt);
     if (attempt === undefined || attempt < 1) fail(`task ${t.id}: attempt must be positive int`);
     if (!TASK_STATUSES.has(t.status)) fail(`task ${t.id}: invalid task status`);
+    const kind = t.kind === undefined ? 'code' : boundedStr(t.kind, 16);
+    if (kind !== 'code' && kind !== 'run') fail(`task ${t.id}: invalid kind`);
+    const manifest = t.run_manifest && typeof t.run_manifest === 'object' && !Array.isArray(t.run_manifest) ? t.run_manifest : undefined;
+    const paid = !!(t.authorization && typeof t.authorization === 'object' && !Array.isArray(t.authorization) && t.authorization.paid === true);
     counts[t.status] += 1;
     tasks.push({
       id: t.id,
+      kind,
       attempt,
       status: t.status,
       title: boundedStr(t.title, 200),
       coder_id: boundedStr(t.coder_id, 128) ?? null,
       reviewer_id: boundedStr(t.reviewer_id, 128) ?? null,
       checker_id: boundedStr(t.checker_id, 128) ?? null,
+      operator_id: boundedStr(t.operator_id, 128) ?? null,
+      auditor_id: boundedStr(t.auditor_id, 128) ?? null,
+      run_id: manifest ? boundedStr(manifest.run_id, 128) ?? null : null,
+      launch: manifest ? boundedStr(manifest.launch, 16) ?? null : null,
+      paid,
     });
   }
 
@@ -165,11 +175,19 @@ export async function snapshot(fs, runPath, signal) {
     });
   }
 
-  // Known report paths
+  // Known report paths; schema 2 run tasks follow the supervisor's RUN_REPORT_NAMES
+  // (acceptance is written as artifact-verification.json, usage-audit only for paid runs).
   const rels = ['reports/verification.json'];
   for (const t of tasks) {
-    rels.push(`reports/${t.id}/attempt-${t.attempt}/review.json`);
-    rels.push(`reports/${t.id}/attempt-${t.attempt}/acceptance.json`);
+    const base = `reports/${t.id}/attempt-${t.attempt}`;
+    if (t.kind === 'run') {
+      rels.push(`${base}/run-integrity.json`);
+      rels.push(`${base}/artifact-verification.json`);
+      if (t.paid) rels.push(`${base}/usage-audit.json`);
+    } else {
+      rels.push(`${base}/review.json`);
+      rels.push(`${base}/acceptance.json`);
+    }
   }
 
   signal?.throwIfAborted();

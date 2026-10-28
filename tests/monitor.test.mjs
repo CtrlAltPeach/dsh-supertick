@@ -62,6 +62,77 @@ const RUN = JSON.stringify({
 
 const baseFiles = { 'RUN.json': RUN };
 
+const RUN2 = JSON.stringify({
+  schema: 2,
+  name: 'runs-demo',
+  phase: 'implementation',
+  tasks: [
+    { id: 'code-1', kind: 'code', attempt: 1, status: 'DONE', title: 'C', coder_id: 'cod-1' },
+    {
+      id: 'run-1', kind: 'run', attempt: 2, status: 'RUNNING', title: 'R',
+      operator_id: 'op-1', reviewer_id: 'rev-1', checker_id: 'chk-1', auditor_id: 'aud-1',
+      run_manifest: { tool: 'mesh', run_id: 'run-xyz', run_dir: 'results/mesh/run-xyz', launch: 'dsh-job' },
+      authorization: { paid: true, granted_by: 'user', ref: 'm0001', scope: 'attempt 1' },
+      events: [{ type: 'boundary', at: '2026-10-28T00:00:00+00:00', reason: 'r', ref: 'job-1', prior_run_id: 'run-abc' }],
+      prior_run_id: 'run-abc',
+    },
+    {
+      id: 'run-2', kind: 'run', attempt: 1, status: 'TODO', title: 'R2',
+      run_manifest: { tool: 'pytest', run_id: 'free-1', launch: 'external' },
+    },
+  ],
+  agents: [{ id: 'op-1', role: 'run-operator', status: 'working' }],
+  jobs: [{ id: 'job-1', status: 'running' }],
+});
+
+test('schema 2: run tasks surface manifest fields and supervisor report names', async () => {
+  const files = {
+    'RUN.json': RUN2,
+    'reports/run-1/attempt-2/run-integrity.json': JSON.stringify({ kind: 'run-integrity', verdict: 'ok' }),
+  };
+  const { fs } = makeFake(files);
+  const snap = await snapshot(fs, '/run');
+  assert.equal(snap.counts.RUNNING, 1);
+
+  const code = snap.tasks.find(t => t.id === 'code-1');
+  assert.equal(code.kind, 'code');
+  assert.equal(code.coder_id, 'cod-1');
+  assert.equal(code.paid, false);
+
+  const paid = snap.tasks.find(t => t.id === 'run-1');
+  assert.equal(paid.kind, 'run');
+  assert.equal(paid.run_id, 'run-xyz');
+  assert.equal(paid.launch, 'dsh-job');
+  assert.equal(paid.operator_id, 'op-1');
+  assert.equal(paid.auditor_id, 'aud-1');
+  assert.equal(paid.paid, true);
+
+  const unpaid = snap.tasks.find(t => t.id === 'run-2');
+  assert.equal(unpaid.run_id, 'free-1');
+  assert.equal(unpaid.launch, 'external');
+  assert.equal(unpaid.paid, false);
+
+  const paths = snap.reports.map(r => r.path);
+  assert.ok(paths.includes('reports/code-1/attempt-1/review.json'));
+  assert.ok(paths.includes('reports/code-1/attempt-1/acceptance.json'));
+  assert.ok(paths.includes('reports/run-1/attempt-2/run-integrity.json'));
+  assert.ok(paths.includes('reports/run-1/attempt-2/artifact-verification.json'));
+  assert.ok(paths.includes('reports/run-1/attempt-2/usage-audit.json'));
+  assert.ok(!paths.includes('reports/run-2/attempt-1/usage-audit.json'));
+  // 1 verification + 2 code reports + 3 paid-run reports + 2 unpaid-run reports = 8
+  assert.equal(snap.reports.length, 8);
+  const integrity = snap.reports.find(r => r.path === 'reports/run-1/attempt-2/run-integrity.json');
+  assert.equal(integrity.present, true);
+  assert.equal(integrity.kind, 'run-integrity');
+});
+
+test('schema 2: invalid kind rejected', async () => {
+  const bad = JSON.parse(RUN2);
+  bad.tasks[1].kind = 'eval';
+  const { fs } = makeFake({ 'RUN.json': JSON.stringify(bad) });
+  await assert.rejects(snapshot(fs, '/run'), /invalid kind/);
+});
+
 test('valid run: statuses, counts, honest flags', async () => {
   const { fs } = makeFake(baseFiles);
   const snap = await snapshot(fs, '/run');
@@ -104,7 +175,7 @@ test('reports extracted with kind/verdict; revision changes on report-only edit'
 
 test('invalid schema / types / statuses rejected', async () => {
   for (const [mut, re] of [
-    [o => ({ ...o, schema: 2 }), /unsupported schema/],
+    [o => ({ ...o, schema: 3 }), /unsupported schema/],
     [o => ({ ...o, name: 5 }), /invalid name/],
     [o => ({ ...o, phase: null }), /invalid phase/],
     [o => ({ ...o, tasks: 'nope' }), /tasks must be an array/],
