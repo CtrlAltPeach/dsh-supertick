@@ -3,6 +3,7 @@
 Loads the module by absolute path from the repo layout, exercises validate/tick/wait/initialize
 against synthetic run directories in TemporaryDirectory. No real project state is touched.
 """
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -367,23 +368,34 @@ class TestTickIsReadOnly(RunDirTestCase):
 def make_run_task(tid, status="TODO", attempt=1, criteria=("artifacts complete",),
                   run_id="run-a", run_dir="results/toolx/run-a", paid=False, events=None,
                   operator_id=None, reviewer_id=None, checker_id=None, auditor_id=None,
-                  launch="dsh-job", depends_on=()):
+                  launch="dsh-job", depends_on=(), max_review_rounds=None, budget=None):
     authorization = {"paid": paid}
     if paid:
         authorization = {"paid": True, "granted_by": "user", "ref": "m0001", "scope": "attempt 1"}
-    return {"id": tid, "kind": "run", "title": f"run {tid}", "status": status, "attempt": attempt,
+    if budget is not None:
+        authorization["budget"] = budget
+    task = {"id": tid, "kind": "run", "title": f"run {tid}", "status": status, "attempt": attempt,
             "criteria": list(criteria), "depends_on": list(depends_on),
             "run_manifest": {"tool": "toolx", "command": ["toolx", "--go"], "run_id": run_id,
                               "run_dir": run_dir, "launch": launch},
             "authorization": authorization, "events": events if events is not None else [],
             "operator_id": operator_id, "reviewer_id": reviewer_id,
             "checker_id": checker_id, "auditor_id": auditor_id}
+    if max_review_rounds is not None:
+        task["max_review_rounds"] = max_review_rounds
+    return task
 
 
-def make_state2(project_root, tasks=(), agents=(), jobs=(), phase="implementation", max_coders=2):
-    return {"schema": 2, "name": "feat", "project_root": str(project_root), "phase": phase,
-            "complexity": "SIMPLE", "max_coders": max_coders, "created_at": NOW,
-            "updated_at": NOW, "tasks": list(tasks), "agents": list(agents), "jobs": list(jobs)}
+def make_state2(project_root, tasks=(), agents=(), jobs=(), phase="implementation", max_coders=2,
+                max_agents=None, max_review_rounds=None):
+    state = {"schema": 2, "name": "feat", "project_root": str(project_root), "phase": phase,
+             "complexity": "SIMPLE", "max_coders": max_coders, "created_at": NOW,
+             "updated_at": NOW, "tasks": list(tasks), "agents": list(agents), "jobs": list(jobs)}
+    if max_agents is not None:
+        state["max_agents"] = max_agents
+    if max_review_rounds is not None:
+        state["max_review_rounds"] = max_review_rounds
+    return state
 
 
 def make_event(type_, reason="r", ref="job-1", prior_run_id=None):
@@ -675,6 +687,221 @@ class TestUsageAudit(unittest.TestCase):
     def test_missing_artifact_rejected(self):
         with self.assertRaises(Invalid):
             supervisor.usage_audit(str(self.dir), jsonl_names=["nope.jsonl"])
+
+
+class TestAgentBudgetContract(RunDirTestCase):
+    def test_max_agents_bounds(self):
+        for value in (0, 129, "12", True):
+            with self.assertRaises(Invalid):
+                supervisor.validate(make_state2(self.run, max_agents=value))
+        supervisor.validate(make_state2(self.run, max_agents=12))
+        supervisor.validate(make_state2(self.run))
+
+    def test_max_review_rounds_bounds(self):
+        for value in (0, 9, "3", False):
+            with self.assertRaises(Invalid):
+                supervisor.validate(make_state2(self.run, max_review_rounds=value))
+        supervisor.validate(make_state2(self.run, max_review_rounds=3))
+
+    def test_agent_budget_exceeded_is_reported_once(self):
+        agents = [make_agent("c1"), make_agent("c2")]
+        self.write_state(make_state2(self.run, agents=agents, max_agents=1))
+        result = supervisor.tick(str(self.run))
+        over = [a for a in result["actions"] if a["kind"] == "agent_budget_exceeded"]
+        self.assertEqual(len(over), 1)
+        self.assertEqual(over[0]["priority"], "P1")
+
+    def test_within_agent_budget_is_quiet(self):
+        self.write_state(make_state2(self.run, agents=[make_agent("c1")], max_agents=12))
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "agent_budget_exceeded"])
+
+
+class TestReviewRounds(RunDirTestCase):
+    def reviewer_pair(self, task):
+        return [make_agent("c1", task=task["id"], status="inactive"),
+                make_agent("r1", role="reviewer", task=task["id"], status="inactive")]
+
+    def test_run_level_ceiling_flags_past_attempt(self):
+        task = make_task("t1", status="REVIEW", attempt=4, change_id=DIGEST,
+                         coder_id="c1", reviewer_id="r1")
+        self.write_state(make_state2(self.run, tasks=[task], agents=self.reviewer_pair(task),
+                                     max_review_rounds=3))
+        result = supervisor.tick(str(self.run))
+        flagged = [a for a in result["actions"] if a["kind"] == "review_rounds_exceeded"]
+        self.assertEqual(len(flagged), 1)
+        self.assertEqual(flagged[0]["priority"], "P1")
+
+    def test_task_override_wins(self):
+        task = make_task("t1", status="REVIEW", attempt=3, change_id=DIGEST,
+                         coder_id="c1", reviewer_id="r1")
+        task["max_review_rounds"] = 5
+        self.write_state(make_state2(self.run, tasks=[task], agents=self.reviewer_pair(task),
+                                     max_review_rounds=2))
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "review_rounds_exceeded"])
+
+    def test_done_is_exempt(self):
+        task = make_task("t1", status="DONE", attempt=5, change_id=DIGEST, coder_id="c1",
+                         reviewer_id="r1", checker_id="k1")
+        agents = self.reviewer_pair(task) + [make_agent("k1", role="checker", task="t1",
+                                                        status="inactive")]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents, max_review_rounds=3))
+        self.write_report(task, "review", "r1")
+        self.write_report(task, "acceptance", "k1")
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "review_rounds_exceeded"])
+
+
+class TestAgentAccounting(RunDirTestCase):
+    def state_with(self, agent):
+        return make_state2(self.run, agents=[agent])
+
+    def test_absent_accounting_is_valid(self):
+        supervisor.validate(self.state_with(make_agent("c1")))
+
+    def test_usage_requires_source(self):
+        agent = make_agent("c1")
+        agent["usage"] = {"input": 1, "output": 2, "cache_read": 0, "cache_write": 0}
+        with self.assertRaises(Invalid):
+            supervisor.validate(self.state_with(agent))
+        agent["usage_source"] = "host"
+        supervisor.validate(self.state_with(agent))
+
+    def test_usage_shape_checked(self):
+        for bad in ({"input": -1, "output": 0, "cache_read": 0, "cache_write": 0},
+                    {"input": 1}, {"input": "1", "output": 0, "cache_read": 0, "cache_write": 0}):
+            agent = make_agent("c1")
+            agent["usage"], agent["usage_source"] = bad, "host"
+            with self.assertRaises(Invalid):
+                supervisor.validate(self.state_with(agent))
+
+    def test_usage_source_enum_and_timestamps(self):
+        agent = make_agent("c1")
+        agent["usage"] = {"input": 1, "output": 0, "cache_read": 0, "cache_write": 0}
+        agent["usage_source"] = "guessed"
+        with self.assertRaises(Invalid):
+            supervisor.validate(self.state_with(agent))
+        for field in ("started_at", "ended_at"):
+            agent = make_agent("c1")
+            agent[field] = "not-a-timestamp"
+            with self.assertRaises(Invalid):
+                supervisor.validate(self.state_with(agent))
+            agent[field] = NOW
+            supervisor.validate(self.state_with(agent))
+
+
+class TestBudgetContract(RunTaskTestCase):
+    def test_invalid_budget_shapes_rejected(self):
+        for budget in ({}, {"max_calls": "3"}, {"max_calls": -1}, {"max_cost": 1.0},
+                       {"max_cost": 1.0, "currency": 7}):
+            task = make_run_task("run-1", paid=True, budget=budget)
+            with self.assertRaises(Invalid):
+                supervisor.validate(make_state2(self.run, tasks=[task]))
+
+    def test_valid_budget_shapes_accepted(self):
+        for budget in ({"max_calls": 3}, {"max_cost": 1.0, "currency": "USD"},
+                       {"max_calls": 5, "max_cost": 2, "currency": "USD"}):
+            task = make_run_task("run-1", paid=True, budget=budget)
+            supervisor.validate(make_state2(self.run, tasks=[task]))
+
+    def test_stop_reason_shape(self):
+        task = make_run_task("run-1")
+        task["stop_reason"] = "   "
+        with self.assertRaises(Invalid):
+            supervisor.validate(make_state2(self.run, tasks=[task]))
+        task["stop_reason"] = "guard trip: repeated 503"
+        supervisor.validate(make_state2(self.run, tasks=[task]))
+
+    def test_budget_exceeded_is_advisory_not_a_gate(self):
+        task = make_run_task("run-1", status="DONE", paid=True, budget={"max_calls": 2},
+                             operator_id="op-1", reviewer_id="rev-1", checker_id="chk-1",
+                             auditor_id="aud-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1", status="inactive"),
+                  make_agent("rev-1", role="reviewer", task="run-1", status="inactive"),
+                  make_agent("chk-1", role="artifact-verifier", task="run-1", status="inactive"),
+                  make_agent("aud-1", role="usage-auditor", task="run-1", status="inactive")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "collected", "task": "run-1"}]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+        self.write_run_report(task, "run_integrity", "rev-1")
+        self.write_run_report(task, "acceptance", "chk-1")
+        self.write_usage_audit(task, "aud-1", calls=3)
+        result = supervisor.tick(str(self.run))
+        over = [a for a in result["actions"] if a["kind"] == "budget_exceeded"]
+        self.assertEqual(len(over), 1)
+        self.assertEqual(over[0]["priority"], "P1")
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "invalid_report"])
+
+    def test_within_budget_is_quiet(self):
+        task = make_run_task("run-1", status="DONE", paid=True, budget={"max_calls": 5},
+                             operator_id="op-1", reviewer_id="rev-1", checker_id="chk-1",
+                             auditor_id="aud-1")
+        agents = [make_agent("op-1", role="run-operator", task="run-1", status="inactive"),
+                  make_agent("rev-1", role="reviewer", task="run-1", status="inactive"),
+                  make_agent("chk-1", role="artifact-verifier", task="run-1", status="inactive"),
+                  make_agent("aud-1", role="usage-auditor", task="run-1", status="inactive")]
+        jobs = [{"id": "job-1", "purpose": "run toolx", "status": "collected", "task": "run-1"}]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents, jobs=jobs))
+        self.write_run_report(task, "run_integrity", "rev-1")
+        self.write_run_report(task, "acceptance", "chk-1")
+        self.write_usage_audit(task, "aud-1", calls=1)
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "budget_exceeded"])
+
+
+class TestPostrunCheck(RunTaskTestCase):
+    @staticmethod
+    def digest(data):
+        return hashlib.sha256(data).hexdigest()
+
+    def test_freeze_hashes_and_stop_reason(self):
+        kept = self.project / "src" / "kept.py"
+        kept.parent.mkdir(parents=True)
+        kept.write_bytes(b"kept")
+        drifted = self.project / "src" / "drifted.py"
+        drifted.write_bytes(b"new content")
+        manifest = {"schema": 1, "inputs": {"files": {str(kept): self.digest(b"kept"),
+                                                          str(drifted): self.digest(b"old content")}}}
+        (self.run / "FROZEN-INPUTS.json").write_text(json.dumps(manifest), encoding="utf-8")
+        task = make_run_task("run-1", status="BLOCKED", launch="external")
+        task["run_manifest"]["input_freeze"] = "FROZEN-INPUTS.json sha256 abc123; dry-run exit 0"
+        task["stop_reason"] = "guard trip: repeated 503"
+        self.write_state(make_state2(self.run, tasks=[task]))
+        result = supervisor.postrun_check(str(self.run))
+        self.assertTrue(result["deterministic"])
+        self.assertEqual(result["gate_validation"], "not_run")
+        entry = result["tasks"][0]
+        self.assertTrue(entry["stop_reason_recorded"])
+        self.assertFalse(entry["run_dir"]["exists"])
+        freeze = entry["input_freeze"][0]
+        self.assertEqual(freeze["source"], "FROZEN-INPUTS.json")
+        self.assertEqual(freeze["listed"], 2)
+        self.assertEqual(freeze["matched"], 1)
+        self.assertEqual(freeze["mismatched"], {"count": 1, "names": [str(drifted)]})
+        self.assertEqual(freeze["missing"]["count"], 0)
+
+    def test_missing_manifest_reports_error(self):
+        task = make_run_task("run-1", status="BLOCKED", launch="external")
+        task["run_manifest"]["input_freeze"] = "ABSENT.json sha256 abc123"
+        self.write_state(make_state2(self.run, tasks=[task]))
+        freeze = supervisor.postrun_check(str(self.run))["tasks"][0]["input_freeze"][0]
+        self.assertEqual(freeze["source"], "ABSENT.json")
+        self.assertIn("not found", freeze["error"])
+
+    def test_run_dir_listing_and_event_tally(self):
+        directory = self.run / "results" / "toolx" / "run-a"
+        directory.mkdir(parents=True)
+        (directory / "out.json").write_text("{}", encoding="utf-8")
+        task = make_run_task("run-1", status="RUNNING", launch="external", operator_id="op-1",
+                             events=[make_event("stopped")])
+        self.write_state(make_state2(self.run, tasks=[task],
+                                     agents=[make_agent("op-1", role="run-operator", task="run-1")]))
+        entry = supervisor.postrun_check(str(self.run))["tasks"][0]
+        self.assertEqual(entry["events"]["stopped"], 1)
+        self.assertEqual(entry["run_dir"]["files"], 1)
+        self.assertEqual(entry["run_dir"]["top_level"], ["out.json"])
+        self.assertFalse(entry["stop_reason_recorded"])
+        self.assertFalse(any(entry["audit_reports"].values()))
 
 
 if __name__ == "__main__":

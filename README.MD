@@ -23,7 +23,7 @@ From a checkout of this repository:
 ```bash
 node --test tests/*.test.mjs
 pnpm pack
-dsh plugin --profile desktop add ./dsh-supertick-0.2.1.tgz
+dsh plugin --profile desktop add ./dsh-supertick-0.5.0.tgz
 ```
 
 Replace `desktop` with your active profile name. The command installs the local tarball; it does not publish to a registry. If the package does not appear in `dsh.profile.bundles`, add `dsh-supertick` to that array in the profile settings. A DSH restart may be required after composition changes; a browser refresh alone does not guarantee that a new host plugin is loaded. Removing the plugin (`dsh plugin --profile desktop remove dsh-supertick`) restores the filesystem skills fallback.
@@ -36,8 +36,9 @@ Child-agent models are not hardcoded. The default configuration ships in
 ```json
 {
   "models": [
-    { "provider": "zai-coding-cn", "model": "glm-5.3-flash", "use": "bounded research, risk checks, mechanical verification" },
-    { "provider": "zai-coding-cn", "model": "glm-5.3", "use": "architecture, code, review, acceptance, difficult debugging" }
+    { "provider": "zai-coding-cn", "model": "glm-5.3-flash", "use": "bounded research, risk checks, mechanical verification, routine coding, tests and docs" },
+    { "provider": "zai-coding-cn", "model": "glm-5.3", "use": "architecture, complex code, review, acceptance, difficult debugging" },
+    { "provider": "openai-codex", "model": "gpt-6.1-terra", "use": "creative drafting, UI and doc text, heavy synthesis, second-opinion review" }
   ]
 }
 ```
@@ -112,6 +113,48 @@ tested tool's model), hold via native job completion with bounded heartbeats,
 then review (`run-integrity.json`), verify artifacts (`artifact-verification.json`)
 and, for paid runs, audit usage.
 
+## Bounded fan-out
+
+A run records two ceilings in `RUN.json` and `init` writes conservative defaults
+(`max_agents: 12`, `max_review_rounds: 3`; a task may override the round ceiling):
+
+- `max_agents` — total child agents the run may record. Exceeding it is reported by
+  `tick` as P1 `agent_budget_exceeded`; it is a finding, not an invalid state.
+- `max_review_rounds` — attempts a task may spend before review stops being
+  instance-driven. `tick` reports P1 `review_rounds_exceeded` for a non-DONE task
+  past its ceiling; the next review must probe the real call graph and name every
+  defect class, and the lead asks the operator instead of paying for another round.
+
+These are ceilings, not targets. A run that needs dozens of children is a design
+smell to justify, and a review FAIL that reports one defect per round is the most
+expensive outcome in the workflow. Reviewer and usage-auditor prompts in
+[ROLES.MD](skills/supertick/references/ROLES.MD) encode that expectation.
+
+Paid run tasks may also carry `authorization.budget` (`max_calls`, `max_cost`,
+`currency`). When a valid usage audit exceeds it, `tick` reports P1
+`budget_exceeded` — again advisory: an overspent run needs a user decision, not a
+false failure.
+
+## Deterministic post-run checks
+
+A stopped run does not need auditor children to re-hash inputs, count artifacts and
+reconcile call totals. `postrun-check` prints that evidence as a draft of facts:
+
+```bash
+python skills/supertick/scripts/supervisor.py postrun-check <absolute-run> --hashes FROZEN-INPUTS.json
+```
+
+It reports, per run task: stop/stop_requested/resumed event tallies, which audit
+reports exist, whether a `stop_reason` was recorded, the `run_dir` file/byte counts
+and top-level entries, and for each freeze manifest the listed/matched/mismatched/
+missing/unreadable hash counts. The result is marked `deterministic: true` and
+`gate_validation: "not_run"`; hashes prove files are unchanged since the freeze,
+they do not prove the run was valid. Project-specific metric recomputation stays a
+project script.
+
+Optional agent accounting (`started_at`, `ended_at`, `usage`,
+`usage_source: "host"|"unobserved"`) is validated when present and never inferred.
+
 ## Optional Python supervisor
 
 Validates gates; never starts agents:
@@ -121,9 +164,10 @@ python skills/supertick/scripts/supervisor.py init <absolute-project> example
 python skills/supertick/scripts/supervisor.py tick <absolute-run>
 python skills/supertick/scripts/supervisor.py wait <absolute-run> --interval 20 --max 900
 python skills/supertick/scripts/supervisor.py usage-audit <absolute-run> --jsonl model_usage_audit.jsonl --usage usage.json --summary summary.json --tariffs tariffs.json
+python skills/supertick/scripts/supervisor.py postrun-check <absolute-run> --hashes FROZEN-INPUTS.json
 ```
 
-`init` only creates a new run; `tick` is read-only. P0 — contradiction, P1 — action required, P4 — quiet. Exit 0 means a well-formed answer, not an acceptance pass. `usage-audit` prints a read-only draft usage report to stdout: sources measure the same calls, so totals are taken from the most granular source (jsonl, then usage, then summary) and every source lands in `reconcile` with its own totals; tariff output is an "estimate, not invoice". For run tasks, `tick` flags `collect_pending` (P1) when a bound job was collected without a `run-integrity.json`, and P0 `invalid_report` when a paid DONE lacks a valid `usage-audit.json`.
+`init` only creates a new run; `tick` is read-only. P0 — contradiction, P1 — action required, P4 — quiet. Exit 0 means a well-formed answer, not an acceptance pass. `usage-audit` prints a read-only draft usage report to stdout: sources measure the same calls, so totals are taken from the most granular source (jsonl, then usage, then summary) and every source lands in `reconcile` with its own totals; tariff output is an "estimate, not invoice". For run tasks, `tick` flags `collect_pending` (P1) when a bound job was collected without a `run-integrity.json`, and P0 `invalid_report` when a paid DONE lacks a valid `usage-audit.json`; `budget_exceeded`, `agent_budget_exceeded` and `review_rounds_exceeded` (all P1) report spending and fan-out past the recorded ceilings.
 
 ## Tests and development scripts
 

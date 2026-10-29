@@ -9,7 +9,7 @@ import re
 import sys
 import time
 
-VERSION = "0.3.0"
+VERSION = "0.5.0"
 STATUSES = {"TODO", "RUNNING", "REVIEW", "ACCEPTING", "DONE", "BLOCKED"}
 PHASES = {"planning", "implementation", "verification", "complete"}
 TASK_KINDS = {"code", "run"}
@@ -18,6 +18,8 @@ ROLES = {"researcher", "architect", "tech-lead", "risk-tester", "coder", "review
          "run-operator", "usage-auditor", "artifact-verifier"}
 ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
+USAGE_KEYS = ("input", "output", "cache_read", "cache_write")
+USAGE_SOURCES = {"host", "unobserved"}
 
 
 class Invalid(ValueError):
@@ -95,6 +97,22 @@ def strings(value, label, nonempty=False):
     return value
 
 
+def check_agent_accounting(agent):
+    """Optional, host-reported child accounting. Absence is normal and never invalid."""
+    for field in ("started_at", "ended_at"):
+        if agent.get(field) is not None:
+            timestamp(agent[field])
+    usage = agent.get("usage")
+    if usage is not None:
+        require(isinstance(usage, dict) and all(type(usage.get(key)) is int and usage[key] >= 0 for key in USAGE_KEYS),
+                "agent usage must count input/output/cache_read/cache_write")
+    source = agent.get("usage_source")
+    require(source is None or isinstance(source, str) and source in USAGE_SOURCES,
+            "usage_source must be host or unobserved")
+    require(usage is None or source is not None,
+            "recorded agent usage requires usage_source (host or unobserved)")
+
+
 def check_run_task(task):
     manifest = task.get("run_manifest")
     require(isinstance(manifest, dict), "run task needs run_manifest")
@@ -113,6 +131,15 @@ def check_run_task(task):
     if authorization["paid"]:
         for field in ("granted_by", "ref", "scope"):
             require(isinstance(authorization.get(field), str) and bool(authorization[field].strip()), f"paid run requires authorization.{field}")
+    budget = authorization.get("budget")
+    if budget is not None:
+        require(isinstance(budget, dict), "authorization.budget must be an object")
+        for field in ("max_calls", "max_cost"):
+            value = budget.get(field)
+            require(value is None or type(value) in (int, float) and value >= 0, f"budget {field} must be a nonnegative number")
+        require(budget.get("max_calls") is not None or budget.get("max_cost") is not None, "budget needs max_calls or max_cost")
+        if budget.get("max_cost") is not None:
+            require(isinstance(budget.get("currency"), str) and bool(budget["currency"].strip()), "a cost budget requires currency")
     events = task.get("events", [])
     require(isinstance(events, list), "events must be a list")
     boundaries = fixes = 0
@@ -137,6 +164,9 @@ def check_run_task(task):
     require(not stopped or task["status"] in {"RUNNING", "BLOCKED"}, "stopped run must be BLOCKED or resumed before REVIEW/ACCEPTING/DONE")
     require(task["attempt"] == boundaries + 1, "attempt must equal boundary count + 1")
     require(fixes <= task["attempt"], "at most one fixed event per attempt")
+    stop_reason = task.get("stop_reason")
+    require(stop_reason is None or isinstance(stop_reason, str) and bool(stop_reason.strip()),
+            "stop_reason must be a nonempty string when present")
 
 
 def validate(state):
@@ -149,6 +179,12 @@ def validate(state):
     timestamp(state.get("updated_at"))
     limit = state.get("max_coders")
     require(type(limit) is int and 1 <= limit <= 8, "max_coders must be 1..8")
+    agent_budget = state.get("max_agents")
+    require(agent_budget is None or type(agent_budget) is int and 1 <= agent_budget <= 128,
+            "max_agents must be 1..128 when present")
+    review_budget = state.get("max_review_rounds")
+    require(review_budget is None or type(review_budget) is int and 1 <= review_budget <= 8,
+            "max_review_rounds must be 1..8 when present")
     require(enum(state.get("complexity"), {"SIMPLE", "MEDIUM", "COMPLEX"}), "invalid complexity")
     tasks, agents, jobs = state.get("tasks"), state.get("agents"), state.get("jobs")
     require(isinstance(tasks, list) and isinstance(agents, list) and isinstance(jobs, list), "tasks/agents/jobs must be lists")
@@ -165,6 +201,9 @@ def validate(state):
         require(isinstance(task.get("title"), str) and bool(task["title"].strip()), "empty task title")
         require(enum(task.get("status"), STATUSES), f"invalid status: {key}")
         require(type(task.get("attempt")) is int and task["attempt"] >= 1, "attempt must be positive")
+        rounds = task.get("max_review_rounds")
+        require(rounds is None or type(rounds) is int and 1 <= rounds <= 8,
+                "max_review_rounds must be 1..8 when present")
         kind = task.get("kind", "code")
         require(enum(kind, TASK_KINDS), f"invalid task kind: {key}")
         require(schema == 2 or kind == "code", "run tasks require schema 2")
@@ -227,6 +266,7 @@ def validate(state):
         require(enum(agent.get("role"), ROLES), "invalid agent role")
         require(enum(agent.get("status"), {"running", "inactive", "stopped"}), "invalid agent status")
         timestamp(agent.get("last_event_at"))
+        check_agent_accounting(agent)
         require(agent.get("task") is None or isinstance(agent["task"], str) and agent["task"] in by_id, "unknown agent task")
     for task in tasks:
         run_task = task.get("kind", "code") == "run"
@@ -350,6 +390,116 @@ def check_verification(run):
     return report
 
 
+FREEZE_NAME = re.compile(r"([A-Za-z0-9_.\-/]+\.json)")
+HASH_LIMIT = 5000
+
+
+def _hashed_entries(node, found, limit=HASH_LIMIT):
+    """Collect (path, digest) pairs from a project freeze manifest of any nesting."""
+    if len(found) >= limit:
+        return found
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if isinstance(key, str) and isinstance(value, str) and DIGEST.fullmatch(value) and ("/" in key or "\\" in key):
+                found.append((key, value))
+            else:
+                _hashed_entries(value, found, limit)
+    elif isinstance(node, list):
+        for value in node:
+            _hashed_entries(value, found, limit)
+    return found
+
+
+def verify_freeze(run, name, project, limit=HASH_LIMIT):
+    path = inside(run, name)
+    if not path.is_file():
+        return {"source": name, "error": "manifest not found in the run directory"}
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"source": name, "error": f"unreadable manifest: {exc}"}
+    entries = _hashed_entries(manifest, [], limit)
+    if not entries:
+        return {"source": name, "error": "no path/digest pairs found; hashing format is project-specific"}
+    missing, mismatched, unreadable, matched = [], [], [], 0
+    for raw, digest in entries[:limit]:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = project / raw
+        try:
+            plain_path(candidate)
+            data = candidate.read_bytes()
+        except (Invalid, OSError):
+            unreadable.append(raw)
+            continue
+        if hashlib.sha256(data).hexdigest() == digest:
+            matched += 1
+        else:
+            mismatched.append(raw)
+    def brief(items):
+        return {"count": len(items), "names": items[:10]}
+    return {"source": name, "listed": len(entries), "matched": matched, "missing": brief(missing),
+            "mismatched": brief(mismatched), "unreadable": brief(unreadable)}
+
+
+def postrun_check(run, hashes=(), limit=HASH_LIMIT):
+    """Deterministic post-run evidence for stopped runs: freeze hashes, run_dir contents, stop events.
+
+    Replaces an LLM auditor only for mechanical checks. This is a draft of facts, not a
+    gate and not an acceptance report; a human or reviewer still decides validity.
+    """
+    state, revision = load(run)
+    project = plain_path(state["project_root"])
+    require(project.is_dir(), "project_root does not exist")
+    frozen = {}
+    tasks = []
+    for task in state["tasks"]:
+        if task.get("kind", "code") != "run":
+            continue
+        manifest = task["run_manifest"]
+        events = task.get("events", [])
+        entry = {"task": task["id"], "status": task["status"], "run_id": manifest["run_id"],
+                 "events": {name: sum(e["type"] == name for e in events) for name in sorted(EVENT_TYPES)},
+                 "audit_reports": {kind: inside(run, report_path(task, kind)).is_file()
+                                   for kind in ("run_integrity", "acceptance", "usage_audit")}}
+        stop_reason = task.get("stop_reason")
+        entry["stop_reason_recorded"] = isinstance(stop_reason, str) and bool(stop_reason.strip())
+        directory = inside(project, manifest["run_dir"])
+        if directory.is_dir():
+            files = [p for p in directory.rglob("*") if p.is_file()]
+            entry["run_dir"] = {"path": manifest["run_dir"], "files": len(files),
+                                "bytes": sum(p.stat().st_size for p in files),
+                                "top_level": sorted(p.name for p in directory.iterdir())[:20]}
+        else:
+            entry["run_dir"] = {"path": manifest["run_dir"], "exists": False}
+        names = list(hashes) or FREEZE_NAME.findall(manifest.get("input_freeze") or "")
+        entry["input_freeze"] = [frozen.setdefault(name, verify_freeze(run, name, project, limit)) for name in names]
+        tasks.append(entry)
+    return {"version": VERSION, "revision": revision, "draft": True, "deterministic": True,
+            "gate_validation": "not_run", "tasks": tasks,
+            "note": "Mechanical evidence for a stopped run. Hashes prove files are unchanged since the freeze; "
+                    "they do not prove the run was valid. Project metric recomputation stays a project script."}
+
+
+def budget_findings(task, report):
+    """Advisory comparison of a valid usage audit against authorization.budget.
+
+    Never a gate: a run that overspent is a finding for the user, not an invalid state.
+    """
+    budget = (task.get("authorization") or {}).get("budget")
+    if not isinstance(budget, dict):
+        return []
+    findings = []
+    calls = report.get("calls_total")
+    if isinstance(budget.get("max_calls"), (int, float)) and isinstance(calls, int) and calls > budget["max_calls"]:
+        findings.append(f"{calls} calls over budget {budget['max_calls']}")
+    estimate = report.get("cost_estimate")
+    cost = estimate.get("total") if isinstance(estimate, dict) else None
+    if isinstance(budget.get("max_cost"), (int, float)) and isinstance(cost, (int, float)) and cost > budget["max_cost"]:
+        findings.append(f"estimate {cost} {estimate.get('currency')} over budget {budget['max_cost']} {budget.get('currency')}")
+    return findings
+
+
 def tick(run, now=None):
     state, revision = load(run)
     now = now or datetime.now(timezone.utc)
@@ -359,10 +509,15 @@ def tick(run, now=None):
         actions.append({"priority": priority, "kind": kind, "detail": detail, "ref": ref})
 
     tasks = {t["id"]: t for t in state["tasks"]}
+    review_budget = state.get("max_review_rounds")
     for task in tasks.values():
         status = task["status"]
         if status == "BLOCKED":
             add("P1", "blocked", task["id"])
+        rounds = task.get("max_review_rounds", review_budget)
+        if rounds is not None and task["attempt"] > rounds and status not in {"DONE", "BLOCKED"}:
+            add("P1", "review_rounds_exceeded",
+                f"{task['id']}: attempt {task['attempt']} over {rounds}; probe the real call graph, list defect classes, then ask the user")
         run_task = task.get("kind", "code") == "run"
         review_kind = "run_integrity" if run_task else "review"
         kinds = []
@@ -386,9 +541,12 @@ def tick(run, now=None):
         if run_task:
             if status == "DONE" and task["authorization"]["paid"]:
                 try:
-                    check_usage_audit(run, task)
+                    audited = check_usage_audit(run, task)
                 except (Invalid, OSError, ValueError) as exc:
                     add("P0", "invalid_report", f"{task['id']}: {exc}", report_path(task, "usage_audit"))
+                else:
+                    for finding in budget_findings(task, audited):
+                        add("P1", "budget_exceeded", f"{task['id']}: {finding}", report_path(task, "usage_audit"))
             if status == "RUNNING":
                 collected = any(job.get("task") == task["id"] and job["status"] == "collected" for job in state["jobs"])
                 if collected and not inside(run, report_path(task, "run_integrity")).exists():
@@ -415,6 +573,10 @@ def tick(run, now=None):
         age = (now - timestamp(agent["last_event_at"])).total_seconds()
         if agent["status"] == "running" and age >= 1800:
             add("P1", "check_agent", f"{agent['id']}: no recorded event for {int(age)}s; verify native status, not proof of death")
+    agent_budget = state.get("max_agents")
+    if agent_budget is not None and len(state["agents"]) > agent_budget:
+        add("P1", "agent_budget_exceeded",
+            f"{len(state['agents'])} agents recorded over budget {agent_budget}; more agents are not cheaper or faster")
     if state["phase"] == "complete":
         try:
             check_verification(run)
@@ -433,7 +595,7 @@ def initialize(project, name):
     require(not run.exists() and not legacy.exists(), "run already exists; choose resume or another name")
     run.mkdir(parents=True, exist_ok=False)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    state = {"schema": 2, "name": name, "project_root": str(project), "phase": "planning", "complexity": "SIMPLE", "max_coders": 2, "created_at": now, "updated_at": now, "tasks": [], "agents": [], "jobs": []}
+    state = {"schema": 2, "name": name, "project_root": str(project), "phase": "planning", "complexity": "SIMPLE", "max_coders": 2, "max_agents": 12, "max_review_rounds": 3, "created_at": now, "updated_at": now, "tasks": [], "agents": [], "jobs": []}
     (run / "RUN.json").write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (run / "PLAN.MD").write_text("# Plan\n\nNarrative, scope, risks and decisions. Task status lives only in RUN.json.\n", encoding="utf-8")
     (run / "reports").mkdir()
@@ -592,6 +754,10 @@ def main(argv=None):
     audit.add_argument("--usage", action="append", default=[], help="usage JSON artifact name inside the run dir (repeatable)")
     audit.add_argument("--summary", action="append", default=[], help="summary JSON artifact name inside the run dir (repeatable)")
     audit.add_argument("--tariffs", help="optional tariffs JSON file path")
+    postrun = commands.add_parser("postrun-check", help="deterministic post-run evidence for stopped runs")
+    postrun.add_argument("run")
+    postrun.add_argument("--hashes", action="append", default=[], help="freeze manifest name inside the run dir (repeatable; default: parsed from input_freeze)")
+    postrun.add_argument("--limit", type=int, default=HASH_LIMIT, help=f"maximum freeze entries to hash (default {HASH_LIMIT})")
     for command in ("tick", "wait"):
         sub = commands.add_parser(command)
         sub.add_argument("run")
@@ -610,6 +776,9 @@ def main(argv=None):
             result = tick(args.run)
         elif args.command == "usage-audit":
             result = usage_audit(args.run, args.jsonl, args.usage, args.summary, args.tariffs)
+        elif args.command == "postrun-check":
+            require(0 < args.limit <= HASH_LIMIT, f"limit must be 1..{HASH_LIMIT}")
+            result = postrun_check(args.run, tuple(args.hashes), args.limit)
         else:
             result = wait(args.run, args.interval, args.max, args.wake_on)
         print(json.dumps(result, ensure_ascii=False, indent=2))

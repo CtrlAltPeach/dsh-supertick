@@ -22,7 +22,11 @@ fits. The main model prepares and decides; a child operator holds the run.
   ({{ALLOWED_MODELS}}). The run operator is never the tested tool's model.
 - A paid run starts only on an explicit user GO recorded in the task's
   `authorization.ref`. Delegating the launch is never GO. The supervisor checks
-  presence of consent; it cannot grant it.
+  presence of consent; it cannot grant it. Record `authorization.budget`
+  (`max_calls`, `max_cost`, `currency`) before launch when the cost is foreseeable,
+  and a numeric result threshold in the task criteria — a GO that limits volume
+  ("51 traces, one launch") but not money or a minimum result leaves a partial
+  outcome with nothing to compare against.
 
 ## Flow
 
@@ -36,7 +40,17 @@ fits. The main model prepares and decides; a child operator holds the run.
    artifact names) live in the manifest and plan notes, not in this skill.
 2. **Preflight.** Dry-run or offline preflight when the tool supports it. Confirm
    `run_dir` is empty and not claimed by any other task; code tasks may not own
-   files inside it.
+   files inside it. For a paid run, add a **live smoke**: 1-2 real input units with
+   the same model/provider pins under their own explicit GO, cheap enough to be
+   disposable. The pass criterion is that the expected provider response classes —
+   success, a context/input-length overflow such as HTTP 422, 5xx and quota 429 —
+   are recognised and handled, and that no already-paid stage is re-invoked. Three
+   separate paid runs died on exactly these: a 503 selector loop, a 422 that the
+   client classified as a generic error, and a CLI that re-ran and re-paid for 51
+   selectors. A smoke run that costs a fraction of the real run is cheaper than
+   discovering the same class after the full bill. Record what the smoke
+   reuses versus re-pays in `input_freeze` (for example "reuse: frozen dataset and
+   prompts; re-paid: N selector calls").
 3. **Dispatch the operator** via `subagent` with an explicit pair from
    {{ALLOWED_MODELS}}. The operator launches the manifest command as a managed
    background job, holds it to a settled exit, applies stop rules (auth failures,
@@ -56,14 +70,29 @@ fits. The main model prepares and decides; a child operator holds the run.
    `usage-audit.json`, seeded by the read-only
    `supervisor.py usage-audit` draft (sources are reconciled, never summed;
    cost is "estimate, not invoice"). `tick` gates DONE on these reports.
+6. **Stop honestly.** A stop, timeout, crash or guard trip is a finding, not a task
+   to be completed by report-writing. STAY BLOCKED/RUNNING, record the event and the
+   `stop_reason`, and do not spawn the post-run auditor roles for a stopped run: on
+   a stopped run they only re-hash frozen inputs, count files and reconcile call
+   totals — mechanical work a script does exactly. Run
+   `supervisor.py postrun-check <run>` and paste its output into the task's report
+   path as evidence. Keep LLM roles for the DONE path (integrity review, artifact
+   verification, usage audit) and for genuine anomalies the script flags, such as a
+   hash mismatch, a missing artifact or a lost job id. Project-specific metric
+   recomputation stays a project script, not a supervisor subcommand.
 
 ## Supervisor
 
 `python <skill dir>/../supertick/scripts/supervisor.py` with `init`, `tick`,
-`wait`, `usage-audit`. Run tasks appear in tick as: `collect_pending` when a
+`wait`, `usage-audit`, `postrun-check`. Run tasks appear in tick as:
+`collect_pending` when a
 bound job was collected without a run-integrity report; `invalid_report` (P0)
-when a paid DONE lacks a valid usage-audit; report paths switch to
+when a paid DONE lacks a valid usage-audit; `budget_exceeded` (P1) when a valid
+audit is over `authorization.budget`; `review_rounds_exceeded` (P1) when an attempt
+passes the task's `max_review_rounds`. Report paths switch to
 `run-integrity.json` / `artifact-verification.json` / `usage-audit.json`.
+`postrun-check` prints deterministic post-run evidence (freeze hashes, run_dir
+contents, event tallies) for a stopped run and is a draft of facts, not a gate.
 
 ## Honest reporting
 

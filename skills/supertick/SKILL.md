@@ -81,6 +81,15 @@ never guess or silently substitute a model.
   Explicit file paths, not directories/globs. Shared integration files are a separate
   serial task. Default `max_coders: 2`; raising it is deliberate and must respect
   available model capacity. More agents are not automatically cheaper or faster.
+- Budget the fan-out before the first spawn. A run records `max_agents` (total
+  children, default 12) and `max_review_rounds` (default ceiling per task, default 3;
+  a task may override it). Treat them as ceilings, not targets: a SIMPLE task that
+  passes review twice does not need a fourth opinion, and a run of a dozen agents is
+  a design smell to justify, not a milestone. When a task reaches its round ceiling,
+  the next review must probe the real call graph and list defect classes, and the
+  lead asks the user instead of continuing the loop. Never spawn an auditor to
+  recompute hashes, count files or reconcile numbers that a script can — use
+  `supervisor.py postrun-check`, and keep LLM roles for judgement and DONE gates.
 - Add tasks to `RUN.json` with status `TODO`, `attempt: 1`, null agent bindings and
   null `change_id`. Validate with `supervisor.py tick <run>` before dispatch.
 
@@ -108,7 +117,12 @@ Read [ROLES.MD](<references/ROLES.MD>) for copyable scoped prompts.
    provide the upstream optional different-vendor second review.
 5. Review FAIL: return to coder in a new attempt, invalidate old acceptance and
    snapshot, preserve old reports. Increment `attempt`; clear reviewer/checker IDs
-   and `change_id`; do not change accepted dependencies concurrently.
+   and `change_id`; do not change accepted dependencies concurrently. Read the
+   attempt report: a FAIL that names one defect and hides the rest is the most
+   expensive outcome in this workflow. At or past `max_review_rounds`, require the
+   call-graph probe and defect classes from ROLES.MD; if the loop still fails, set
+   the task BLOCKED with a recorded reason and ask the user for a decision instead
+   of paying for another round.
 6. Review PASS: lead checks identity, evidence and snapshot freshness, then launches
    a **new** acceptance checker. Its context contains only task requirements,
    repository guidance, snapshot and test entry points — not coder persuasion or

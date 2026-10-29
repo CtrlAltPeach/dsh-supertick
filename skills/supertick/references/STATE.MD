@@ -23,6 +23,8 @@ be absent in TODO. Timestamps are ISO 8601 with a timezone. Store actual native 
   "phase": "implementation",
   "complexity": "SIMPLE",
   "max_coders": 2,
+  "max_agents": 12,
+  "max_review_rounds": 3,
   "tasks": [
     {
       "id": "task-1",
@@ -55,6 +57,7 @@ be absent in TODO. Timestamps are ISO 8601 with a timezone. Store actual native 
       },
       "authorization": {"paid": false},
       "events": [],
+      "max_review_rounds": 3,
       "operator_id": null,
       "reviewer_id": null,
       "checker_id": null,
@@ -93,6 +96,30 @@ risk-tester, coder, reviewer, checker, verifier, run-operator, usage-auditor,
 artifact-verifier. Planning/verifier task may be null.
 Only provider/model pairs from references/ALLOWED-MODELS.json are allowed. No status derives from
 an invented ID, file existence alone, or an interruption acknowledgement.
+
+Agent objects may carry optional `started_at`, `ended_at`, `usage`
+(`{input, output, cache_read, cache_write}`) and `usage_source` (`host` or
+`unobserved`). These describe the child's own session cost as the host reports it.
+They are never required: a host that does not expose usage leaves them out, and a
+recorded `usage` must name its source — mark it `unobserved` when the numbers are
+an estimate rather than a host report. Never infer usage from memory or from the
+lead's own counters.
+
+## Agent budget
+
+The run records its own ceiling on fan-out. `max_agents` (1..128, optional for
+backward compatibility) is the total number of agents the run may record;
+`max_review_rounds` (1..8, optional) is the default ceiling on review attempts per
+task. `init` writes 12 and 3. A task may override the round ceiling with its own
+`max_review_rounds`. Exceeding a ceiling is reported as `agent_budget_exceeded` or
+`review_rounds_exceeded` (P1), never as an invalid state: the numbers describe a
+run that has spent more than planned, which is a user decision, not a parse error.
+
+Both ceilings are advisory gates for the lead. When a task crosses its round
+ceiling, the next attempt must probe the real call graph and list defect classes
+rather than returning another single-instance finding, and the lead asks the user
+instead of starting an unbounded review loop. `max_coders` still limits coder
+concurrency; these fields limit total spend over the whole run.
 
 Jobs: `{"id":"actual-job-id","purpose":"integration tests","status":"running"}`.
 Status is running/collected/killed; collected means the owner obtained its result,
@@ -136,6 +163,13 @@ never GO. The supervisor only checks presence; it never grants or implies consen
 Paid DONE additionally requires an `auditor_id` binding and a valid usage-audit
 report. Unpaid runs need no usage audit (one may still be written voluntarily).
 
+Optional `authorization.budget`: `{"max_calls": n, "max_cost": x, "currency": "USD"}`.
+At least one of `max_calls`/`max_cost` is required when the block is present, and a
+cost ceiling requires a currency. The usage auditor compares actuals against it and
+the supervisor reports `budget_exceeded` (P1) — an overrun is a finding for the user,
+never an invalid state. An optional `stop_reason` string records, in the task itself,
+why a STOPPED or BLOCKED run did not complete; the supervisor checks its type only.
+
 `events`: append-only list of `{"type": ..., "at": ..., "reason": ..., "ref": ...}`
 with type one of stop_requested, stopped, resumed, fixed, boundary. `resumed`
 requires a preceding `stopped`. `boundary` records an attempt-changing break
@@ -164,6 +198,16 @@ Run reports live under `reports/<task>/attempt-<n>/`:
   cache_write}, unknown_usage_calls: [], reconcile: [{source, note}], cost_estimate:
   {tariffs_ref, total, currency, note: "estimate, not invoice"}}` with task/attempt/
   run_id/agent_id identity.
+
+`supervisor.py postrun-check <run> [--hashes NAME] [--limit N]` produces deterministic
+post-run evidence for stopped or blocked runs: it re-hashes the freeze manifest named
+in `input_freeze` (or `--hashes`), counts the files actually present under each
+`run_dir`, tallies stop/boundary events and notes which audit reports exist. It is a
+draft of mechanical facts (`deterministic: true`, `gate_validation: "not_run"`), not
+a gate and not an acceptance report: matching hashes prove inputs are unchanged since
+the freeze, not that the run was valid. Use it instead of spawning auditor agents to
+re-verify hashes and directory listings. Project-specific metric recomputation stays
+a project script.
 
 `supervisor.py usage-audit <run> --jsonl NAME --usage NAME --summary NAME
 [--tariffs FILE]` aggregates usage artifacts into a read-only draft on stdout.
@@ -239,6 +283,10 @@ verification and no recorded running agent/job. Observe native reality separatel
 - ACCEPTING also validates its prior PASS review; DONE validates both gates.
 - Run task RUNNING whose bound job is collected without a run-integrity report:
   P1 collect_pending. Paid DONE without a valid usage-audit report: P0.
+- Valid usage audit above the recorded budget: P1 budget_exceeded.
+- Agent count over `max_agents`, or a task attempt past `max_review_rounds`:
+  P1 agent_budget_exceeded / review_rounds_exceeded. Neither is a parse error;
+  a stopped run does not need its audit agents, so use `postrun-check` there.
 - Ready independent TODOs: P1 task_ready, limited by free slots and owned files.
 - In implementation, all DONE: P1 verification_needed. Planning does not dispatch.
 - Running agent with no recorded event for ≥1800 seconds: P1 check_agent, not dead.

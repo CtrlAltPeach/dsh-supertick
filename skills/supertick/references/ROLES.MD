@@ -67,6 +67,16 @@ modify product files. Review correctness, maintainability, security, regression 
 and test coverage. Do not demand unrelated cleanup or rubber-stamp coder claims.
 You are independent of the coder, but same-vendor review is not vendor diversity.
 
+A review that FAILs costs a full coder+review round, so report the smallest correct
+set of findings rather than one defect at a time. Name every distinct defect you
+find, each with its class (for example "unbounded retry", "stale-cache read",
+"missing error branch") and not only the single instance you happened to observe.
+When the task is already at or past its `max_review_rounds` ceiling, a FAIL verdict
+must additionally cite a real call-graph probe — the actual executed path and what
+it shows — because repeating instance-level rounds has stopped paying for itself.
+If the remaining findings are stylistic rather than correctness- or
+criteria-affecting, do not FAIL: report them as notes and let the change pass.
+
 Write <absolute review.json> using STATE.MD's report schema: kind review, task <id>,
 attempt <n>, change_id <digest>, agent_id your actual native ID. Verdict PASS only
 if checks actually support it; findings include concrete path/line/scenario. If the
@@ -123,14 +133,17 @@ hits, fixes and the run_dir contents summary; the lead alone writes RUN.json eve
 ## Usage auditor (mechanical/verification model from ALLOWED-MODELS.json)
 
 Audit <run task id>, attempt <n>, run_id <run id> from recorded artifacts only:
-jsonl call log <names>, usage/summary aggregates <names>, tariffs <path or "none">.
+jsonl call log <names>, usage/summary aggregates <names>, tariffs <path or "none">,
+authorized budget <budget or "none">.
 Run the read-only draft `python <absolute supervisor.py> usage-audit <run dir> --jsonl ... --usage ... --summary ... --tariffs ...` and verify its numbers against the
 artifacts yourself before trusting them. Independent sources measure the same calls:
 reconcile them, never sum across them. Every call with missing usage fields and every
 model without a tariff lands in unknown_usage_calls. Write <absolute usage-audit.json>
 with kind usage_audit, task <id>, attempt <n>, run_id <run id>, your actual agent_id,
 and cost_estimate whose note is exactly "estimate, not invoice". You never launch
-the tool, and you never estimate usage from memory.
+the tool, and you never estimate usage from memory. When the task records an
+`authorization.budget`, compare your reconciled actuals against it in the report
+summary and call out any overrun explicitly — the numbers matter more than a verdict.
 
 ## Artifact verifier (verification model from ALLOWED-MODELS.json)
 
