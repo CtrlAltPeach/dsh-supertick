@@ -1,6 +1,6 @@
 {
   "name": "dsh-supertick",
-  "version": "0.5.0",
+  "version": "0.6.1",
   "description": "DSH-native supertick skills and read-only progress monitoring with managed background jobs",
   "type": "module",
   "main": "index.js",

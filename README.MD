@@ -7,6 +7,7 @@ Adapted from upstream commit [7d77a29](https://github.com/denizen24/supertick/co
 ## What differs from upstream
 
 - Upstream ships a Claude Code plugin (agent files, engine scripts, tmux-based team runtime). This fork re-implements the workflow as a DSH-native package: skills load from the plugin, and progress is observed with a host tool instead of shell scripts.
+- Fan-out is a contract, not a vibe. `supertick` classifies the run (SIMPLE/MEDIUM/COMPLEX) and writes `planned_agents` per task before the first spawn; `supervisor.py plan` refuses a plan that does not fit `max_agents`. The conventions skill carries the shape table (single agent, orchestrator + workers, parallel reading, evaluator + optimizer, routing, chained stages) so the principle is read before the first delegation, not after the fifty-fourth.
 - `supertick_monitor` gives the model a read-only snapshot of a run (`RUN.json` plus reports) and one bounded background watch; completion arrives through DSH managed jobs — no polling loop in the conversation.
 - The Python supervisor is kept as an optional, read-only gate validator.
 - Collaboration conventions are tightened for DSH: one writer per file, one-shot roles, and child-agent models read from one JSON config instead of being hardcoded.
@@ -23,7 +24,7 @@ From a checkout of this repository:
 ```bash
 node --test tests/*.test.mjs
 pnpm pack
-dsh plugin --profile desktop add ./dsh-supertick-0.6.0.tgz
+dsh plugin --profile desktop add ./dsh-supertick-0.6.1.tgz
 ```
 
 Replace `desktop` with your active profile name. The command installs the local tarball; it does not publish to a registry. If the package does not appear in `dsh.profile.bundles`, add `dsh-supertick` to that array in the profile settings. A DSH restart may be required after composition changes; a browser refresh alone does not guarantee that a new host plugin is loaded. Removing the plugin (`dsh plugin --profile desktop remove dsh-supertick`) restores the filesystem skills fallback.

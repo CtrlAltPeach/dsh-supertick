@@ -23,6 +23,30 @@ For full team execution load `supertick` and its role/state references.
   value, and a stopped run does not need auditor children at all — mechanical
   post-run checks belong in `supervisor.py postrun-check`.
 
+## Pick the fan-out shape before you spawn
+
+A ceiling is not a plan. A run in this pack recorded 54 child agents under
+`max_agents: 12`, 16 of them (30%) bound to tasks that had already stopped, and
+one task spent 7 attempts and 8 reviewers. The runtime refused nothing, because
+the counter fires after the spending, not before it. Write `planned_agents` per
+task and run `supervisor.py plan` before the first spawn: the check is cheap,
+the fleet is not.
+
+| Shape | Use it when | Do not use it when |
+| --- | --- | --- |
+| Single agent | The work is one file, one answer or one command | You cannot say what the subtasks are |
+| Orchestrator + workers | Subtasks are independent, each owns its files and its own definition of done | Workers need the same context or edit shared files |
+| Parallel reading | Several independent questions must be answered before one decision | The answers must be consistent with each other |
+| Evaluator + optimizer | There is a clear evaluation criterion and refinement measurably helps | The criterion is taste, or one round already passes |
+| Routing | Distinct categories of work are better handled by different models | One model handles all of it acceptably |
+| Chained stages | Fixed ordered subtasks (build → test → report) | A stage may need to loop back to an earlier one |
+
+Start at the top of the table and stop at the first row that fits. Parallel
+reading is the cheapest and the safest shape: read-only children cannot
+conflict. Parallel *writing* is the expensive mistake — writes stay
+single-threaded, reads may be parallel. A SIMPLE task that passes review twice
+does not need a fourth opinion.
+
 ## Native DSH collaboration
 
 - All `subagent` calls explicitly select a provider/model pair configured in

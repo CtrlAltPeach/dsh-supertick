@@ -9,7 +9,7 @@ import re
 import sys
 import time
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 STATUSES = {"TODO", "RUNNING", "REVIEW", "ACCEPTING", "DONE", "BLOCKED"}
 PHASES = {"planning", "implementation", "verification", "complete"}
 TASK_KINDS = {"code", "run"}

@@ -102,6 +102,20 @@ class InstallTests(unittest.TestCase):
         self.assertIn("access `write`", roles)
         self.assertIn("access `read`", roles)
 
+    def test_documented_fanout_shapes(self):
+        # v0.6.1: the principle must be readable before the first delegation.
+        def flat(path):
+            return " ".join((ROOT / path).read_text(encoding="utf-8").split())
+
+        conventions = flat("skills/supertick-conventions/SKILL.md")
+        for shape in ("Single agent", "Orchestrator + workers", "Parallel reading",
+                      "Evaluator + optimizer", "Routing", "Chained stages"):
+            self.assertIn(shape, conventions)
+        self.assertIn("## Pick the fan-out shape before you spawn", conventions)
+        self.assertIn("A ceiling is not a plan", conventions)
+        self.assertIn("writes stay single-threaded, reads may be parallel", conventions)
+        self.assertIn("`supervisor.py plan`", conventions)
+
     def test_skill_frontmatter_survives_crlf_checkout(self):
         # A Windows git checkout (core.autocrlf=true) rewrites SKILL.md to CRLF;
         # the packer must still accept it.
