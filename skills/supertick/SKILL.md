@@ -53,11 +53,16 @@ never guess or silently substitute a model.
    - **COMPLEX**: migration, security boundary, compatibility constraints, or competing
      designs with material tradeoffs; add architect + risk-tester before implementation.
    Ask the user about material design forks, not every implementation detail.
+   The tier also sets the fan-out budget. `init --complexity SIMPLE|MEDIUM|COMPLEX`
+   writes SIMPLE 4 agents / 2 review rounds / 3 concurrent, MEDIUM 8/3/4 and
+   COMPLEX 14/4/6. Raise a ceiling deliberately when the plan justifies it; never
+   let the default quietly become the target.
 5. Establish one persistent run at `<project>/RUNS/feature-<slug>/`. A run is the
    whole supervised effort — coding tasks and external tool tasks alike. Legacy
    `SUPERTICK/feature-<slug>/` runs resume in place; `init` creates only `RUNS/`.
    Resolve Python with `load_workspace_dependencies`; prefer that absolute executable.
-   Run the bundled `scripts/supervisor.py init <absolute-project> <slug>` only for a
+   Run the bundled `scripts/supervisor.py init <absolute-project> <slug>
+   [--complexity <tier>]` only for a
    NEW run. It refuses existing runs, linked paths and unsafe names. No dependencies
    beyond Python 3.12+. If Python is unavailable, create the same files with CAS tools.
    Do not put a run inside an untrusted symlink or delete a previous run to restart.
@@ -81,15 +86,25 @@ never guess or silently substitute a model.
   Explicit file paths, not directories/globs. Shared integration files are a separate
   serial task. Default `max_coders: 2`; raising it is deliberate and must respect
   available model capacity. More agents are not automatically cheaper or faster.
-- Budget the fan-out before the first spawn. A run records `max_agents` (total
-  children, default 12) and `max_review_rounds` (default ceiling per task, default 3;
-  a task may override it). Treat them as ceilings, not targets: a SIMPLE task that
-  passes review twice does not need a fourth opinion, and a run of a dozen agents is
-  a design smell to justify, not a milestone. When a task reaches its round ceiling,
-  the next review must probe the real call graph and list defect classes, and the
-  lead asks the user instead of continuing the loop. Never spawn an auditor to
-  recompute hashes, count files or reconcile numbers that a script can — use
-  `supervisor.py postrun-check`, and keep LLM roles for judgement and DONE gates.
+- Budget the fan-out before the first spawn. The run records `max_agents` (total
+  children), `max_review_rounds` (default ceiling per task; a task may override it)
+  and `max_concurrent_agents` (children running at once), all from the complexity
+  tier. Treat them as ceilings, not targets: a SIMPLE task that passes review twice
+  does not need a fourth opinion, and a run of a dozen agents is a design smell to
+  justify, not a milestone. Write a `planned_agents` number on every task, run
+  `supervisor.py plan <run>` to confirm the plan fits `max_agents`, and revise the
+  plan when the work changes. When a task reaches its round ceiling, the next review
+  must probe the real call graph and list defect classes, and the lead asks the user
+  instead of continuing the loop. Never spawn an auditor to recompute hashes, count
+  files or reconcile numbers that a script can — use `supervisor.py postrun-check`,
+  and keep LLM roles for judgement and DONE gates.
+- Declare `access` on every agent: `write` for the one coder that owns a task's files,
+  `read` for researcher, reviewer, checker, verifier, usage-auditor and
+  artifact-verifier. Absent means `write`, and a read-only agent bound as a task's
+  writer is a P0 contradiction. **Writes stay single-threaded; reads may be
+  parallel** — read-only roles add judgement, own no files, and may overlap freely,
+  while parallel writers on one codebase diverge in style and edge-case handling even
+  when each one is correct.
 - Add tasks to `RUN.json` with status `TODO`, `attempt: 1`, null agent bindings and
   null `change_id`. Validate with `supervisor.py tick <run>` before dispatch.
 

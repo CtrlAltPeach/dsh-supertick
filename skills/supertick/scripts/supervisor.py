@@ -9,7 +9,7 @@ import re
 import sys
 import time
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 STATUSES = {"TODO", "RUNNING", "REVIEW", "ACCEPTING", "DONE", "BLOCKED"}
 PHASES = {"planning", "implementation", "verification", "complete"}
 TASK_KINDS = {"code", "run"}
@@ -20,6 +20,15 @@ ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 USAGE_KEYS = ("input", "output", "cache_read", "cache_write")
 USAGE_SOURCES = {"host", "unobserved"}
+AGENT_ACCESS = {"read", "write"}
+# Fan-out scales with complexity: a one-file fix does not need a fleet, and a
+# migration should not be squeezed into a SIMPLE budget. The run declares its
+# plan first; these are the ceilings that plan starts from.
+COMPLEXITY_DEFAULTS = {
+    "SIMPLE": {"max_agents": 4, "max_review_rounds": 2, "max_concurrent_agents": 3},
+    "MEDIUM": {"max_agents": 8, "max_review_rounds": 3, "max_concurrent_agents": 4},
+    "COMPLEX": {"max_agents": 14, "max_review_rounds": 4, "max_concurrent_agents": 6},
+}
 
 
 class Invalid(ValueError):
@@ -185,6 +194,9 @@ def validate(state):
     review_budget = state.get("max_review_rounds")
     require(review_budget is None or type(review_budget) is int and 1 <= review_budget <= 8,
             "max_review_rounds must be 1..8 when present")
+    concurrency_budget = state.get("max_concurrent_agents")
+    require(concurrency_budget is None or type(concurrency_budget) is int and 1 <= concurrency_budget <= 32,
+            "max_concurrent_agents must be 1..32 when present")
     require(enum(state.get("complexity"), {"SIMPLE", "MEDIUM", "COMPLEX"}), "invalid complexity")
     tasks, agents, jobs = state.get("tasks"), state.get("agents"), state.get("jobs")
     require(isinstance(tasks, list) and isinstance(agents, list) and isinstance(jobs, list), "tasks/agents/jobs must be lists")
@@ -204,6 +216,9 @@ def validate(state):
         rounds = task.get("max_review_rounds")
         require(rounds is None or type(rounds) is int and 1 <= rounds <= 8,
                 "max_review_rounds must be 1..8 when present")
+        planned = task.get("planned_agents")
+        require(planned is None or type(planned) is int and 1 <= planned <= 128,
+                "planned_agents must be 1..128 when present")
         kind = task.get("kind", "code")
         require(enum(kind, TASK_KINDS), f"invalid task kind: {key}")
         require(schema == 2 or kind == "code", "run tasks require schema 2")
@@ -264,6 +279,7 @@ def validate(state):
         provider, model = agent.get("provider"), agent.get("model")
         require(isinstance(provider, str) and isinstance(model, str) and (provider, model) in ALLOWED_MODELS, "forbidden agent model")
         require(enum(agent.get("role"), ROLES), "invalid agent role")
+        require(enum(agent.get("access", "write"), AGENT_ACCESS), "agent access must be read or write")
         require(enum(agent.get("status"), {"running", "inactive", "stopped"}), "invalid agent status")
         timestamp(agent.get("last_event_at"))
         check_agent_accounting(agent)
@@ -514,6 +530,17 @@ def tick(run, now=None):
         status = task["status"]
         if status == "BLOCKED":
             add("P1", "blocked", task["id"])
+        planned = task.get("planned_agents")
+        if planned is not None:
+            spent = sum(1 for a in state["agents"] if a.get("task") == task["id"])
+            if spent > planned:
+                add("P1", "fanout_planned_exceeded",
+                    f"{task['id']}: {spent} agents over planned {planned}; the plan was not the budget")
+        writer_id = task.get("operator_id") if task.get("kind", "code") == "run" else task.get("coder_id")
+        writer = next((a for a in state["agents"] if a["id"] == writer_id), None)
+        if writer is not None and writer.get("access") == "read":
+            add("P0", "read_agent_owns_files",
+                f"{task['id']}: writer agent {writer['id']} is read-only; only a write agent owns files")
         rounds = task.get("max_review_rounds", review_budget)
         if rounds is not None and task["attempt"] > rounds and status not in {"DONE", "BLOCKED"}:
             add("P1", "review_rounds_exceeded",
@@ -577,6 +604,12 @@ def tick(run, now=None):
     if agent_budget is not None and len(state["agents"]) > agent_budget:
         add("P1", "agent_budget_exceeded",
             f"{len(state['agents'])} agents recorded over budget {agent_budget}; more agents are not cheaper or faster")
+    concurrency_budget = state.get("max_concurrent_agents")
+    if concurrency_budget is not None:
+        live = sum(1 for a in state["agents"] if a["status"] == "running")
+        if live > concurrency_budget:
+            add("P1", "concurrency_exceeded",
+                f"{live} agents running over concurrency budget {concurrency_budget}; parallel reads are cheap, parallel writers are not")
     if state["phase"] == "complete":
         try:
             check_verification(run)
@@ -586,8 +619,29 @@ def tick(run, now=None):
     return {"version": VERSION, "revision": revision, "phase": state["phase"], "actions": actions or [{"priority": "P4", "kind": "quiet", "detail": "no action", "ref": "RUN.json"}]}
 
 
-def initialize(project, name):
+def plan(run):
+    """Read-only fan-out plan check: sum the per-task plans and compare to the ceiling.
+
+    A ceiling that is only checked after the spend is an after-the-fact finding, not a
+    plan. This makes the shortfall visible before the first spawn.
+    """
+    state, revision = load(run)
+    tasks = state["tasks"]
+    declared = state.get("max_agents")
+    planned = sum(t.get("planned_agents") or 0 for t in tasks)
+    unplanned = sorted(t["id"] for t in tasks if t.get("planned_agents") is None)
+    writers = sum(1 for t in tasks if t.get("kind", "code") == "code")
+    return {"version": VERSION, "revision": revision, "complexity": state.get("complexity"),
+            "max_agents": declared, "max_concurrent_agents": state.get("max_concurrent_agents"),
+            "max_review_rounds": state.get("max_review_rounds"),
+            "planned_agents": planned, "code_tasks": writers, "tasks_without_plan": unplanned,
+            "within_budget": declared is None or planned <= declared,
+            "read_only_roles": ["researcher", "reviewer", "checker", "verifier", "usage-auditor", "artifact-verifier"]}
+
+
+def initialize(project, name, complexity="SIMPLE"):
     require(bool(ID.fullmatch(name)), "invalid run name")
+    require(enum(complexity, set(COMPLEXITY_DEFAULTS)), "invalid complexity")
     project = plain_path(project)
     require(project.is_dir(), "project directory does not exist")
     run = inside(project, f"RUNS/feature-{name}")
@@ -595,7 +649,12 @@ def initialize(project, name):
     require(not run.exists() and not legacy.exists(), "run already exists; choose resume or another name")
     run.mkdir(parents=True, exist_ok=False)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    state = {"schema": 2, "name": name, "project_root": str(project), "phase": "planning", "complexity": "SIMPLE", "max_coders": 2, "max_agents": 12, "max_review_rounds": 3, "created_at": now, "updated_at": now, "tasks": [], "agents": [], "jobs": []}
+    budgets = COMPLEXITY_DEFAULTS[complexity]
+    state = {"schema": 2, "name": name, "project_root": str(project), "phase": "planning",
+             "complexity": complexity, "max_coders": 2, "max_agents": budgets["max_agents"],
+             "max_review_rounds": budgets["max_review_rounds"],
+             "max_concurrent_agents": budgets["max_concurrent_agents"],
+             "created_at": now, "updated_at": now, "tasks": [], "agents": [], "jobs": []}
     (run / "RUN.json").write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (run / "PLAN.MD").write_text("# Plan\n\nNarrative, scope, risks and decisions. Task status lives only in RUN.json.\n", encoding="utf-8")
     (run / "reports").mkdir()
@@ -748,6 +807,8 @@ def main(argv=None):
     init = commands.add_parser("init")
     init.add_argument("project")
     init.add_argument("name")
+    init.add_argument("--complexity", choices=sorted(COMPLEXITY_DEFAULTS), default="SIMPLE",
+                      help="fan-out tier the run starts from (default SIMPLE)")
     audit = commands.add_parser("usage-audit", help="aggregate run usage artifacts into a draft usage_audit report")
     audit.add_argument("run")
     audit.add_argument("--jsonl", action="append", default=[], help="JSONL artifact name inside the run dir (repeatable)")
@@ -758,7 +819,7 @@ def main(argv=None):
     postrun.add_argument("run")
     postrun.add_argument("--hashes", action="append", default=[], help="freeze manifest name inside the run dir (repeatable; default: parsed from input_freeze)")
     postrun.add_argument("--limit", type=int, default=HASH_LIMIT, help=f"maximum freeze entries to hash (default {HASH_LIMIT})")
-    for command in ("tick", "wait"):
+    for command in ("tick", "wait", "plan"):
         sub = commands.add_parser(command)
         sub.add_argument("run")
         if command == "wait":
@@ -771,9 +832,13 @@ def main(argv=None):
         return 2
     try:
         if args.command == "init":
-            result = {"run": str(initialize(args.project, args.name))}
+            result = {"run": str(initialize(args.project, args.name, args.complexity))}
         elif args.command == "tick":
             result = tick(args.run)
+        elif args.command == "plan":
+            result = plan(args.run)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["within_budget"] else 2
         elif args.command == "usage-audit":
             result = usage_audit(args.run, args.jsonl, args.usage, args.summary, args.tariffs)
         elif args.command == "postrun-check":

@@ -23,7 +23,7 @@ From a checkout of this repository:
 ```bash
 node --test tests/*.test.mjs
 pnpm pack
-dsh plugin --profile desktop add ./dsh-supertick-0.5.0.tgz
+dsh plugin --profile desktop add ./dsh-supertick-0.6.0.tgz
 ```
 
 Replace `desktop` with your active profile name. The command installs the local tarball; it does not publish to a registry. If the package does not appear in `dsh.profile.bundles`, add `dsh-supertick` to that array in the profile settings. A DSH restart may be required after composition changes; a browser refresh alone does not guarantee that a new host plugin is loaded. Removing the plugin (`dsh plugin --profile desktop remove dsh-supertick`) restores the filesystem skills fallback.
@@ -113,10 +113,11 @@ tested tool's model), hold via native job completion with bounded heartbeats,
 then review (`run-integrity.json`), verify artifacts (`artifact-verification.json`)
 and, for paid runs, audit usage.
 
-## Bounded fan-out
+## Fan-out contract
 
-A run records two ceilings in `RUN.json` and `init` writes conservative defaults
-(`max_agents: 12`, `max_review_rounds: 3`; a task may override the round ceiling):
+A run records its own fan-out ceilings in `RUN.json`. `init --complexity` scales them
+by how hard the work is — SIMPLE `4` agents / `2` review rounds / `3` concurrent,
+MEDIUM `8/3/4`, COMPLEX `14/4/6`:
 
 - `max_agents` — total child agents the run may record. Exceeding it is reported by
   `tick` as P1 `agent_budget_exceeded`; it is a finding, not an invalid state.
@@ -124,6 +125,23 @@ A run records two ceilings in `RUN.json` and `init` writes conservative defaults
   instance-driven. `tick` reports P1 `review_rounds_exceeded` for a non-DONE task
   past its ceiling; the next review must probe the real call graph and name every
   defect class, and the lead asks the operator instead of paying for another round.
+  A task may override the round ceiling for itself.
+- `max_concurrent_agents` — children allowed to be `running` at once. `tick` reports
+  P1 `concurrency_exceeded` past it.
+- `planned_agents` (per task) — the budget the lead wrote down *before* the first
+  spawn, not an observation afterwards. `supervisor.py plan <run>` sums those numbers
+  against `max_agents`, lists tasks that declare no plan, and exits 2 when the plan
+  cannot fit. Running it before dispatching is the point; revising the plan as the
+  work changes is normal, silently exceeding it is not. `tick` reports P1
+  `fanout_planned_exceeded` when a task spends more agents than it planned.
+
+Every agent also carries an `access` of `read` or `write` (absent means `write`).
+Only a `write` agent owns files, so a read-only agent bound as a task's writer is a
+P0 `read_agent_owns_files` contradiction. The contract is **writes stay
+single-threaded, reads may be parallel**: one file, one writer, always; reviewer,
+checker and verifier add judgement rather than edits, so they own nothing and may
+overlap. Parallel writers on one codebase diverge in style and edge-case handling
+even when each one is individually correct.
 
 These are ceilings, not targets. A run that needs dozens of children is a design
 smell to justify, and a review FAIL that reports one defect per round is the most
@@ -160,14 +178,15 @@ Optional agent accounting (`started_at`, `ended_at`, `usage`,
 Validates gates; never starts agents:
 
 ```bash
-python skills/supertick/scripts/supervisor.py init <absolute-project> example
+python skills/supertick/scripts/supervisor.py init <absolute-project> example [--complexity SIMPLE|MEDIUM|COMPLEX]
+python skills/supertick/scripts/supervisor.py plan <absolute-run>
 python skills/supertick/scripts/supervisor.py tick <absolute-run>
 python skills/supertick/scripts/supervisor.py wait <absolute-run> --interval 20 --max 900
 python skills/supertick/scripts/supervisor.py usage-audit <absolute-run> --jsonl model_usage_audit.jsonl --usage usage.json --summary summary.json --tariffs tariffs.json
 python skills/supertick/scripts/supervisor.py postrun-check <absolute-run> --hashes FROZEN-INPUTS.json
 ```
 
-`init` only creates a new run; `tick` is read-only. P0 — contradiction, P1 — action required, P4 — quiet. Exit 0 means a well-formed answer, not an acceptance pass. `usage-audit` prints a read-only draft usage report to stdout: sources measure the same calls, so totals are taken from the most granular source (jsonl, then usage, then summary) and every source lands in `reconcile` with its own totals; tariff output is an "estimate, not invoice". For run tasks, `tick` flags `collect_pending` (P1) when a bound job was collected without a `run-integrity.json`, and P0 `invalid_report` when a paid DONE lacks a valid `usage-audit.json`; `budget_exceeded`, `agent_budget_exceeded` and `review_rounds_exceeded` (all P1) report spending and fan-out past the recorded ceilings.
+`init` only creates a new run; `tick` and `plan` are read-only. P0 — contradiction, P1 — action required, P4 — quiet. Exit 0 means a well-formed answer, not an acceptance pass; `plan` exits 2 when the planned agents cannot fit `max_agents`. `usage-audit` prints a read-only draft usage report to stdout: sources measure the same calls, so totals are taken from the most granular source (jsonl, then usage, then summary) and every source lands in `reconcile` with its own totals; tariff output is an "estimate, not invoice". For run tasks, `tick` flags `collect_pending` (P1) when a bound job was collected without a `run-integrity.json`, and P0 `invalid_report` when a paid DONE lacks a valid `usage-audit.json`; `budget_exceeded`, `agent_budget_exceeded`, `concurrency_exceeded`, `review_rounds_exceeded` and `fanout_planned_exceeded` (all P1) report spending and fan-out past the recorded ceilings; `read_agent_owns_files` (P0) flags a read-only agent recorded as a task's writer.
 
 ## Tests and development scripts
 

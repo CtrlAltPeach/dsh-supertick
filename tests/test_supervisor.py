@@ -26,9 +26,12 @@ def make_task(tid, status="TODO", attempt=1, criteria=("works",), files=("src/a.
             "checker_id": checker_id}
 
 
-def make_agent(aid, role="coder", task=None, status="running", model="glm-5.3"):
-    return {"id": aid, "provider": "zai-coding-cn", "model": model, "role": role,
-            "status": status, "last_event_at": NOW, "task": task}
+def make_agent(aid, role="coder", task=None, status="running", model="glm-5.3", access=None):
+    agent = {"id": aid, "provider": "zai-coding-cn", "model": model, "role": role,
+             "status": status, "last_event_at": NOW, "task": task}
+    if access is not None:
+        agent["access"] = access
+    return agent
 
 
 def make_state(project_root, tasks=(), agents=(), phase="implementation", max_coders=2):
@@ -104,6 +107,41 @@ class TestInitialize(unittest.TestCase):
     def test_bad_name_rejected(self):
         with self.assertRaises(Invalid):
             supervisor.initialize(str(self.project), "bad name!")
+
+    def test_init_scales_budget_with_complexity(self):
+        expected = {"SIMPLE": (4, 2, 3), "MEDIUM": (8, 3, 4), "COMPLEX": (14, 4, 6)}
+        for complexity, (agents, rounds, concurrent) in expected.items():
+            run = supervisor.initialize(str(self.project), f"feat-{complexity.lower()}", complexity)
+            state = json.loads((run / "RUN.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["complexity"], complexity)
+            self.assertEqual(state["max_agents"], agents)
+            self.assertEqual(state["max_review_rounds"], rounds)
+            self.assertEqual(state["max_concurrent_agents"], concurrent)
+            supervisor.validate(state)
+
+    def test_init_defaults_to_simple(self):
+        run = supervisor.initialize(str(self.project), "default")
+        state = json.loads((run / "RUN.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["complexity"], "SIMPLE")
+        self.assertEqual(state["max_agents"], 4)
+
+    def test_init_rejects_unknown_complexity(self):
+        with self.assertRaises(Invalid):
+            supervisor.initialize(str(self.project), "feat", "ENORMOUS")
+
+    def test_legacy_state_without_new_fields_validates(self):
+        # A schema-2 run written before the fan-out contract must keep working.
+        legacy = self.project / "RUNS" / "feature-legacy"
+        legacy.mkdir(parents=True)
+        state = {"schema": 2, "name": "legacy", "project_root": str(self.project),
+                 "phase": "planning", "complexity": "SIMPLE", "max_coders": 2,
+                 "max_agents": 12, "max_review_rounds": 3, "created_at": NOW,
+                 "updated_at": NOW, "tasks": [], "agents": [], "jobs": []}
+        supervisor.validate(state)
+        self.assertNotIn("max_concurrent_agents", state)
+        (legacy / "RUN.json").write_text(json.dumps(state), encoding="utf-8")
+        result = supervisor.plan(str(legacy))
+        self.assertTrue(result["within_budget"])
 
 
 class TestRelativePath(unittest.TestCase):
@@ -387,14 +425,17 @@ def make_run_task(tid, status="TODO", attempt=1, criteria=("artifacts complete",
 
 
 def make_state2(project_root, tasks=(), agents=(), jobs=(), phase="implementation", max_coders=2,
-                max_agents=None, max_review_rounds=None):
+                max_agents=None, max_review_rounds=None, max_concurrent_agents=None,
+                complexity="SIMPLE"):
     state = {"schema": 2, "name": "feat", "project_root": str(project_root), "phase": phase,
-             "complexity": "SIMPLE", "max_coders": max_coders, "created_at": NOW,
+             "complexity": complexity, "max_coders": max_coders, "created_at": NOW,
              "updated_at": NOW, "tasks": list(tasks), "agents": list(agents), "jobs": list(jobs)}
     if max_agents is not None:
         state["max_agents"] = max_agents
     if max_review_rounds is not None:
         state["max_review_rounds"] = max_review_rounds
+    if max_concurrent_agents is not None:
+        state["max_concurrent_agents"] = max_concurrent_agents
     return state
 
 
@@ -715,6 +756,123 @@ class TestAgentBudgetContract(RunDirTestCase):
         self.write_state(make_state2(self.run, agents=[make_agent("c1")], max_agents=12))
         result = supervisor.tick(str(self.run))
         self.assertFalse([a for a in result["actions"] if a["kind"] == "agent_budget_exceeded"])
+
+
+class TestFanoutPlan(RunDirTestCase):
+    """The plan is a budget: crossing it is visible before and after the spend."""
+
+    def test_planned_agents_bounds(self):
+        for value in (0, 129, "3", True):
+            task = make_task("t1")
+            task["planned_agents"] = value
+            with self.assertRaises(Invalid):
+                supervisor.validate(make_state2(self.run, tasks=[task]))
+        task = make_task("t1")
+        task["planned_agents"] = 3
+        supervisor.validate(make_state2(self.run, tasks=[task]))
+
+    def test_planned_agents_is_optional(self):
+        supervisor.validate(make_state2(self.run, tasks=[make_task("t1")]))
+
+    def test_spend_over_plan_is_reported(self):
+        task = make_task("t1", status="RUNNING", coder_id="c1")
+        task["planned_agents"] = 1
+        agents = [make_agent("c1", task="t1"), make_agent("r1", role="reviewer", task="t1")]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents, max_agents=12))
+        result = supervisor.tick(str(self.run))
+        over = [a for a in result["actions"] if a["kind"] == "fanout_planned_exceeded"]
+        self.assertEqual(len(over), 1)
+        self.assertEqual(over[0]["priority"], "P1")
+        self.assertIn("t1", over[0]["detail"])
+
+    def test_spend_within_plan_is_quiet(self):
+        task = make_task("t1", status="RUNNING", coder_id="c1")
+        task["planned_agents"] = 3
+        self.write_state(make_state2(self.run, tasks=[task], agents=[make_agent("c1", task="t1")]))
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "fanout_planned_exceeded"])
+
+    def test_incident_shape_is_caught_by_both_gates(self):
+        # The recorded incident: 54 agents against a 12-agent budget, one task
+        # holding a fleet of them. Neither number may pass silently.
+        task = make_task("t1", status="RUNNING", coder_id="c1")
+        task["planned_agents"] = 6
+        agents = [make_agent("c1", task="t1")] + [make_agent(f"r{i}", role="reviewer", task="t1")
+                                                   for i in range(53)]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents, max_agents=12))
+        result = supervisor.tick(str(self.run))
+        kinds = {a["kind"] for a in result["actions"]}
+        self.assertIn("agent_budget_exceeded", kinds)
+        self.assertIn("fanout_planned_exceeded", kinds)
+
+    def test_read_only_writer_is_p0(self):
+        task = make_task("t1", status="RUNNING", coder_id="c1")
+        agents = [make_agent("c1", task="t1", access="read")]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents))
+        result = supervisor.tick(str(self.run))
+        flagged = [a for a in result["actions"] if a["kind"] == "read_agent_owns_files"]
+        self.assertEqual(len(flagged), 1)
+        self.assertEqual(flagged[0]["priority"], "P0")
+
+    def test_write_writer_is_quiet(self):
+        task = make_task("t1", status="RUNNING", coder_id="c1")
+        agents = [make_agent("c1", task="t1", access="write")]
+        self.write_state(make_state2(self.run, tasks=[task], agents=agents))
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "read_agent_owns_files"])
+
+    def test_access_defaults_to_write(self):
+        self.write_state(make_state2(self.run, agents=[make_agent("c1")]))
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "read_agent_owns_files"])
+
+    def test_access_bounds(self):
+        for value in ("execute", "Read", 1, True):
+            with self.assertRaises(Invalid):
+                supervisor.validate(make_state2(self.run, agents=[make_agent("c1", access=value)]))
+        for value in ("read", "write"):
+            supervisor.validate(make_state2(self.run, agents=[make_agent("c1", access=value)]))
+
+    def test_concurrent_budget_bounds(self):
+        for value in (0, 33, "4", True):
+            with self.assertRaises(Invalid):
+                supervisor.validate(make_state2(self.run, max_concurrent_agents=value))
+        supervisor.validate(make_state2(self.run, max_concurrent_agents=4))
+
+    def test_concurrency_exceeded_is_reported(self):
+        agents = [make_agent("c1"), make_agent("r1", role="researcher"),
+                  make_agent("v1", role="reviewer")]
+        self.write_state(make_state2(self.run, agents=agents, max_concurrent_agents=2))
+        result = supervisor.tick(str(self.run))
+        over = [a for a in result["actions"] if a["kind"] == "concurrency_exceeded"]
+        self.assertEqual(len(over), 1)
+        self.assertEqual(over[0]["priority"], "P1")
+
+    def test_inactive_agents_do_not_count_as_concurrent(self):
+        agents = [make_agent("c1"), make_agent("r1", role="researcher", status="inactive"),
+                  make_agent("v1", role="reviewer", status="stopped")]
+        self.write_state(make_state2(self.run, agents=agents, max_concurrent_agents=2))
+        result = supervisor.tick(str(self.run))
+        self.assertFalse([a for a in result["actions"] if a["kind"] == "concurrency_exceeded"])
+
+
+class TestPlanCommand(RunDirTestCase):
+    def test_plan_sums_declared_budgets(self):
+        first, second = make_task("t1"), make_task("t2")
+        first["planned_agents"], second["planned_agents"] = 3, 4
+        self.write_state(make_state2(self.run, tasks=[first, second], max_agents=12))
+        result = supervisor.plan(str(self.run))
+        self.assertEqual(result["planned_agents"], 7)
+        self.assertEqual(result["code_tasks"], 2)
+        self.assertTrue(result["within_budget"])
+        self.assertEqual(result["tasks_without_plan"], [])
+
+    def test_plan_refuses_when_ceiling_is_too_low(self):
+        task = make_task("t1")
+        task["planned_agents"] = 9
+        self.write_state(make_state2(self.run, tasks=[task], max_agents=4))
+        result = supervisor.plan(str(self.run))
+        self.assertFalse(result["within_budget"])
 
 
 class TestReviewRounds(RunDirTestCase):

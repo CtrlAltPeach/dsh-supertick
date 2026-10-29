@@ -25,6 +25,7 @@ be absent in TODO. Timestamps are ISO 8601 with a timezone. Store actual native 
   "max_coders": 2,
   "max_agents": 12,
   "max_review_rounds": 3,
+  "max_concurrent_agents": 4,
   "tasks": [
     {
       "id": "task-1",
@@ -34,6 +35,7 @@ be absent in TODO. Timestamps are ISO 8601 with a timezone. Store actual native 
       "files": ["src/input.py", "tests/test_input.py"],
       "criteria": ["An empty input returns a validation error"],
       "depends_on": [],
+      "planned_agents": 3,
       "coder_id": null,
       "reviewer_id": null,
       "checker_id": null,
@@ -97,6 +99,14 @@ artifact-verifier. Planning/verifier task may be null.
 Only provider/model pairs from references/ALLOWED-MODELS.json are allowed. No status derives from
 an invented ID, file existence alone, or an interruption acknowledgement.
 
+Agent objects carry an optional `access` of `read` or `write`. Absent means
+`write`, because a read-only default would silently let a writer be recorded as an
+observer. Declare `read` for the roles that never touch product files:
+researcher, reviewer, checker, verifier, usage-auditor, artifact-verifier. Only a
+`write` agent owns files, so a read-only agent bound as a task's writer is a P0
+contradiction, and read-only agents can run concurrently without ownership
+serialization.
+
 Agent objects may carry optional `started_at`, `ended_at`, `usage`
 (`{input, output, cache_read, cache_write}`) and `usage_source` (`host` or
 `unobserved`). These describe the child's own session cost as the host reports it.
@@ -105,21 +115,40 @@ recorded `usage` must name its source — mark it `unobserved` when the numbers 
 an estimate rather than a host report. Never infer usage from memory or from the
 lead's own counters.
 
-## Agent budget
+## Fan-out contract
 
-The run records its own ceiling on fan-out. `max_agents` (1..128, optional for
-backward compatibility) is the total number of agents the run may record;
-`max_review_rounds` (1..8, optional) is the default ceiling on review attempts per
-task. `init` writes 12 and 3. A task may override the round ceiling with its own
-`max_review_rounds`. Exceeding a ceiling is reported as `agent_budget_exceeded` or
-`review_rounds_exceeded` (P1), never as an invalid state: the numbers describe a
-run that has spent more than planned, which is a user decision, not a parse error.
+The run records its own ceiling on fan-out, and the plan is what those ceilings
+measure. `max_agents` (1..128, optional for backward compatibility) is the total
+number of agents the run may record; `max_review_rounds` (1..8, optional) is the
+default ceiling on review attempts per task; `max_concurrent_agents` (1..32,
+optional) bounds agents in `running` state at once. `init` writes these from the
+run's complexity tier — SIMPLE 4/2/3, MEDIUM 8/3/4, COMPLEX 14/4/6 — and
+`init --complexity` selects the tier. A task may override the round ceiling with
+its own `max_review_rounds`.
 
-Both ceilings are advisory gates for the lead. When a task crosses its round
+`planned_agents` (1..128, optional) on a task is the number of agents that task
+is expected to spend. It is the budget the lead wrote down before the first
+spawn, not an observation afterwards. `supervisor.py plan <run>` sums those
+numbers, compares the sum against `max_agents`, lists tasks that declare no plan,
+and exits 2 when the plan cannot fit the ceiling. Run it before dispatching;
+revising the plan as the work changes is normal, silently exceeding it is not.
+
+Exceeding a ceiling is reported as `agent_budget_exceeded`,
+`review_rounds_exceeded`, `fanout_planned_exceeded` or `concurrency_exceeded`
+(P1), never as an invalid state: the numbers describe a run that has spent more
+than planned, which is a user decision, not a parse error.
+
+The contract behind these numbers: **writes stay single-threaded, reads may be
+parallel.** One file, one writer, always; the reviewer, checker and verifier add
+judgement rather than edits, so they need no file ownership and may overlap.
+Parallel writers on one codebase diverge in style and edge-case handling even
+when each one is correct.
+
+These ceilings are advisory gates for the lead. When a task crosses its round
 ceiling, the next attempt must probe the real call graph and list defect classes
 rather than returning another single-instance finding, and the lead asks the user
 instead of starting an unbounded review loop. `max_coders` still limits coder
-concurrency; these fields limit total spend over the whole run.
+concurrency; the fan-out fields limit total spend over the whole run.
 
 Jobs: `{"id":"actual-job-id","purpose":"integration tests","status":"running"}`.
 Status is running/collected/killed; collected means the owner obtained its result,
@@ -284,8 +313,11 @@ verification and no recorded running agent/job. Observe native reality separatel
 - Run task RUNNING whose bound job is collected without a run-integrity report:
   P1 collect_pending. Paid DONE without a valid usage-audit report: P0.
 - Valid usage audit above the recorded budget: P1 budget_exceeded.
-- Agent count over `max_agents`, or a task attempt past `max_review_rounds`:
-  P1 agent_budget_exceeded / review_rounds_exceeded. Neither is a parse error;
+- Agent count over `max_agents`, agents running over `max_concurrent_agents`, or a
+task past `max_review_rounds`: P1 agent_budget_exceeded / concurrency_exceeded /
+review_rounds_exceeded. Spent agents over a task's `planned_agents`: P1
+fanout_planned_exceeded. A writer agent recorded with `access: read`: P0
+read_agent_owns_files. None of these is a parse error;
   a stopped run does not need its audit agents, so use `postrun-check` there.
 - Ready independent TODOs: P1 task_ready, limited by free slots and owned files.
 - In implementation, all DONE: P1 verification_needed. Planning does not dispatch.

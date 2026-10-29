@@ -78,6 +78,30 @@ class InstallTests(unittest.TestCase):
         self.assertIn("{{ALLOWED_MODELS}}", skill)
         self.assertIn("references/ALLOWED-MODELS.json", skill)
 
+    def test_documented_fanout_contract(self):
+        # The v0.6.0 fan-out contract must be described in every place a lead reads.
+        def flat(path):
+            return " ".join((ROOT / path).read_text(encoding="utf-8").split())
+
+        skill = flat("skills/supertick/SKILL.md")
+        state = flat("skills/supertick/references/STATE.MD")
+        roles = flat("skills/supertick/references/ROLES.MD")
+        readme = flat("README.MD")
+        for name in ("planned_agents", "max_concurrent_agents", "access"):
+            self.assertIn(name, state)
+            self.assertIn(name, skill)
+            self.assertIn(name, readme)
+        self.assertIn("supervisor.py plan", skill)
+        self.assertIn("--complexity", skill)
+        self.assertIn("## Fan-out contract", state)
+        self.assertIn("writes stay single-threaded, reads may be parallel", state)
+        self.assertIn("read_agent_owns_files", readme)
+        for role in ("Research / risk", "Coder", "Unified reviewer",
+                     "Independent acceptance checker", "Usage auditor"):
+            self.assertIn(f"## {role}", roles)
+        self.assertIn("access `write`", roles)
+        self.assertIn("access `read`", roles)
+
     def test_skill_frontmatter_survives_crlf_checkout(self):
         # A Windows git checkout (core.autocrlf=true) rewrites SKILL.md to CRLF;
         # the packer must still accept it.
