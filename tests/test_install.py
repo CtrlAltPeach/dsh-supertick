@@ -60,6 +60,15 @@ class InstallTests(unittest.TestCase):
             if "://" not in target:
                 self.assertTrue((path.parent / target).is_file(), (path, target))
 
+    def test_installer_lists_every_packaged_skill(self):
+        # The explicit list is a safety allow-list (it must not install
+        # __pycache__); this test is what keeps it from drifting when a skill
+        # directory is added.
+        on_disk = sorted(path.name for path in (ROOT / "skills").iterdir() if path.is_dir())
+        self.assertEqual(sorted(installer.NAMES), on_disk)
+        packaged = {path.relative_to(ROOT / "skills").as_posix() for path in (ROOT / "skills").rglob("*") if path.is_file() and path.suffix != ".pyc"}
+        self.assertEqual(set(installer.FILES), packaged)
+
     def test_documented_model_allowlist(self):
         for name in installer.NAMES:
             body = (ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
@@ -68,6 +77,14 @@ class InstallTests(unittest.TestCase):
         skill = (ROOT / "skills/supertick/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("{{ALLOWED_MODELS}}", skill)
         self.assertIn("references/ALLOWED-MODELS.json", skill)
+
+    def test_skill_frontmatter_survives_crlf_checkout(self):
+        # A Windows git checkout (core.autocrlf=true) rewrites SKILL.md to CRLF;
+        # the packer must still accept it.
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "skills"
+            result = installer.install(target)
+            self.assertEqual(len(result["skills"]), len(installer.NAMES))
 
 
 if __name__ == "__main__":

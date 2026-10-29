@@ -1,0 +1,4 @@
+# Skill frontmatter is parsed with LF; a CRLF checkout must not break install.py
+# or the packaged metadata, so pin line endings in the repository.
+* text=auto eol=lf
+*.tgz binary

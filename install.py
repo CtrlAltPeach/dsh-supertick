@@ -40,8 +40,8 @@ def install(target, dry_run=False):
     license_bytes = plain(source.parent / "LICENSE").read_bytes()
     payload = [(f"{name}/LICENSE", license_bytes) for name in NAMES]
     payload += [(relative, plain(source / relative).read_bytes()) for relative in FILES]
-    for name in NAMES:
-        body = next(data for relative, data in payload if relative == f"{name}/SKILL.md").decode("utf-8")
+    normalized = {name: next(data for relative, data in payload if relative == f"{name}/SKILL.md").decode("utf-8").replace("\r\n", "\n") for name in NAMES}
+    for name, body in normalized.items():
         if not body.startswith("---\n") or f"\nname: {name}\n" not in body or "\ndescription: " not in body:
             raise ValueError(f"invalid skill entry: {name}")
     result = {"dry_run": dry_run, "target": str(target), "skills": list(NAMES), "files": len(payload)}

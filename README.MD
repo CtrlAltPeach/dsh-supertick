@@ -1,6 +1,6 @@
 # Supertick for DeepSeek Harness
 
-**dsh-supertick** is a native DeepSeek Harness (DSH) host plugin that adapts the [denizen24/supertick](https://github.com/denizen24/supertick) team-implementation workflow: three skills and a model-facing `supertick_monitor` tool. No Claude Code runtime, no tmux, no engine sessions, no separate server. MIT [LICENSE](LICENSE), preserved from upstream.
+**dsh-supertick** is a native DeepSeek Harness (DSH) host plugin that adapts the [denizen24/supertick](https://github.com/denizen24/supertick) team-implementation workflow: four skills and a model-facing `supertick_monitor` tool. No Claude Code runtime, no tmux, no engine sessions, no separate server. MIT [LICENSE](LICENSE), preserved from upstream.
 
 Adapted from upstream commit [7d77a29](https://github.com/denizen24/supertick/commit/7d77a29903a05d7353122446c5bf04ef2c71da4d).
 

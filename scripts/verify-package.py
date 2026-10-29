@@ -8,7 +8,7 @@ import tarfile
 root = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else Path(__file__).resolve().parent.parent
 archive = Path(sys.argv[1]).resolve()
 required = {"package.json", "index.js", "watch.mjs", "monitor.mjs", "cordis.patch.yml", "README.MD", "LICENSE"}
-required.update(f"skills/{name}/SKILL.md" for name in ("supertick", "supertick-interview", "supertick-conventions"))
+required.update(f"skills/{skill.name}/SKILL.md" for skill in sorted((root / "skills").iterdir()) if skill.is_dir())
 seen = set()
 with tarfile.open(archive, "r:gz") as bundle:
     for item in bundle.getmembers():
