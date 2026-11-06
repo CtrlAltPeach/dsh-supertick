@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -77,6 +79,12 @@ class InstallTests(unittest.TestCase):
         skill = (ROOT / "skills/supertick/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("{{ALLOWED_MODELS}}", skill)
         self.assertIn("references/ALLOWED-MODELS.json", skill)
+
+    def test_readme_model_example_matches_allowed_models(self):
+        allowed = json.loads((ROOT / "skills/supertick/references/ALLOWED-MODELS.json").read_text(encoding="utf-8"))
+        block = re.search(r"```json\n(\{.*?\})\n```", (ROOT / "README.MD").read_text(encoding="utf-8"), re.S)
+        self.assertIsNotNone(block, "README must show the ALLOWED-MODELS.json example")
+        self.assertEqual(json.loads(block.group(1))["models"], allowed["models"])
 
     def test_documented_fanout_contract(self):
         # The v0.6.0 fan-out contract must be described in every place a lead reads.

@@ -24,7 +24,7 @@ From a checkout of this repository:
 ```bash
 node --test tests/*.test.mjs
 pnpm pack
-dsh plugin --profile desktop add ./dsh-supertick-0.6.1.tgz
+dsh plugin --profile desktop add ./dsh-supertick-0.6.2.tgz
 ```
 
 Replace `desktop` with your active profile name. The command installs the local tarball; it does not publish to a registry. If the package does not appear in `dsh.profile.bundles`, add `dsh-supertick` to that array in the profile settings. A DSH restart may be required after composition changes; a browser refresh alone does not guarantee that a new host plugin is loaded. Removing the plugin (`dsh plugin --profile desktop remove dsh-supertick`) restores the filesystem skills fallback.
@@ -37,9 +37,8 @@ Child-agent models are not hardcoded. The default configuration ships in
 ```json
 {
   "models": [
-    { "provider": "zai-coding-cn", "model": "glm-5.3-flash", "use": "bounded research, risk checks, mechanical verification, routine coding, tests and docs" },
-    { "provider": "zai-coding-cn", "model": "glm-5.3", "use": "architecture, complex code, review, acceptance, difficult debugging" },
-    { "provider": "openai-codex", "model": "gpt-6.1-terra", "use": "creative drafting, UI and doc text, heavy synthesis, second-opinion review" }
+    { "provider": "deepseek-official", "model": "deepseek-flash", "use": "bounded research, risk checks, mechanical verification, routine coding, tests and docs" },
+    { "provider": "openai-codex", "model": "gpt-6.1-terra", "use": "architecture, complex code, review, acceptance, difficult debugging, creative drafting, UI and doc text, second-opinion review" }
   ]
 }
 ```

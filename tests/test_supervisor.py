@@ -26,8 +26,8 @@ def make_task(tid, status="TODO", attempt=1, criteria=("works",), files=("src/a.
             "checker_id": checker_id}
 
 
-def make_agent(aid, role="coder", task=None, status="running", model="glm-5.3", access=None):
-    agent = {"id": aid, "provider": "zai-coding-cn", "model": model, "role": role,
+def make_agent(aid, role="coder", task=None, status="running", model="gpt-6.1-terra", access=None):
+    agent = {"id": aid, "provider": "openai-codex", "model": model, "role": role,
              "status": status, "last_event_at": NOW, "task": task}
     if access is not None:
         agent["access"] = access
