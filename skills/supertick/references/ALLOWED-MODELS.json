@@ -1,7 +1,8 @@
 {
-  "$comment": "Single source of truth for child-agent LLMs. Skills substitute {{ALLOWED_MODELS}} with these provider/model pairs at run time; supervisor.py validates RUN.json agents against them. 'use' is the role hint per model. A pair only works if the host also allows it in subagent-model-selection-settings.allowedModels. Edit this file to reconfigure - no code changes.",
+  "$comment": "Single source of truth for child-agent LLMs. Skills substitute {{ALLOWED_MODELS}} with these provider/model pairs at run time; supervisor.py validates RUN.json agents against them. Order is priority: top-down, first choice first, last entry is the fallback. 'use' is the role hint per model. A pair only works if the host also allows it in subagent-model-selection-settings.allowedModels. Edit this file to reconfigure - no code changes.",
   "models": [
-    { "provider": "deepseek-official", "model": "deepseek-flash", "use": "bounded research, risk checks, mechanical verification, routine coding, tests and docs" },
-    { "provider": "openai-codex", "model": "gpt-6.1-terra", "use": "architecture, complex code, review, acceptance, difficult debugging, creative drafting, UI and doc text, second-opinion review" }
+    { "provider": "our-free-model", "model": "deepseek-v4.1-flash-free", "use": "free lane, first choice: bounded research, risk checks, mechanical verification, routine coding, tests and docs" },
+    { "provider": "deepseek-official", "model": "deepseek-flash", "use": "official lane, second choice: review, acceptance, difficult debugging when the free lane is rate-limited" },
+    { "provider": "openai-codex", "model": "gpt-6.1-terra", "use": "subscription fallback, last resort: architecture, complex code, independent second-opinion review" }
   ]
 }
